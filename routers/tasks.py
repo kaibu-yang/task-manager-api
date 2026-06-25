@@ -12,6 +12,8 @@ from sqlalchemy import select
 
 from database import get_db
 # 從 database.py 匯入 get_db（取得資料庫連線的函式）
+from routers.auth import get_current_user
+# 從 auth.py 匯入「驗票員」函式
 
 import models
 # 匯入 models.py（資料表定義）
@@ -25,7 +27,7 @@ router = APIRouter()
 
 # Create（建立）：新增一筆任務
 @router.post("/tasks", response_model=TaskRead)
-async def create_task(payload: TaskCreate, db: AsyncSession = Depends(get_db)):
+async def create_task(payload: TaskCreate, db: AsyncSession = Depends(get_db), current_user: str = Depends(get_current_user)):
     task = models.Task(**payload.model_dump())
     db.add(task)
     await db.commit()
@@ -34,13 +36,13 @@ async def create_task(payload: TaskCreate, db: AsyncSession = Depends(get_db)):
 
 # Read（查全部）：列出所有任務
 @router.get("/tasks", response_model=list[TaskRead])
-async def list_tasks(db: AsyncSession = Depends(get_db)):
+async def list_tasks(db: AsyncSession = Depends(get_db), current_user: str = Depends(get_current_user)):
     result = await db.execute(select(models.Task))
     return result.scalars().all()
 
 # Read（查單筆）：依 id 查詢
 @router.get("/tasks/{task_id}", response_model=TaskRead)
-async def get_task(task_id: int, db: AsyncSession = Depends(get_db)):
+async def get_task(task_id: int, db: AsyncSession = Depends(get_db), current_user: str = Depends(get_current_user)):
     task = await db.get(models.Task, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="找不到這筆任務")
@@ -48,7 +50,7 @@ async def get_task(task_id: int, db: AsyncSession = Depends(get_db)):
 
 # Update（更新）：改某一筆任務
 @router.put("/tasks/{task_id}", response_model=TaskRead)
-async def update_task(task_id: int, payload: TaskCreate, db: AsyncSession = Depends(get_db)):
+async def update_task(task_id: int, payload: TaskCreate, db: AsyncSession = Depends(get_db), current_user: str = Depends(get_current_user)):
     task = await db.get(models.Task, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="找不到這筆任務")
@@ -61,7 +63,7 @@ async def update_task(task_id: int, payload: TaskCreate, db: AsyncSession = Depe
 
 # Delete（刪除）：刪掉某一筆任務
 @router.delete("/tasks/{task_id}")
-async def delete_task(task_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_task(task_id: int, db: AsyncSession = Depends(get_db), current_user: str = Depends(get_current_user)):
     task = await db.get(models.Task, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="找不到這筆任務")

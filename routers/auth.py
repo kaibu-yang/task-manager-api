@@ -16,10 +16,9 @@ import os
 from dotenv import load_dotenv
 # dotenv（環境變數工具）= 讀取 .env 檔案的工具
 
-from fastapi import APIRouter, HTTPException, Depends
-# APIRouter（路由器）= 把端點分組管理的工具
-# HTTPException（HTTP 例外）= 回傳錯誤給使用者
-# Depends（依賴）= 讓端點自動取得資料庫連線
+from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+# OAuth2PasswordRequestForm（OAuth2 密碼請求表單）= 接收表單格式的帳號密碼
 
 from sqlalchemy.ext.asyncio import AsyncSession
 # AsyncSession（非同步會話）= 跟資料庫對話的工具
@@ -35,6 +34,26 @@ from schemas import UserCreate, Token
 
 router = APIRouter()
 # router（路由器）= 建立一個路由器物件，端點都掛在這上面
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
+# oauth2_scheme（OAuth2 方案）= 驗票員工具
+# tokenUrl="/login"（令牌網址）= 告訴它去哪裡取得手環（登入端點）
+
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    # token（手環）= 從請求裡自動取出的 JWT 字串
+    # Depends(oauth2_scheme)= 自動從請求的 Header 取出手環
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        # jwt.decode（解碼）= 把 JWT 手環解開，取出裡面的資料
+        username = payload.get("sub")
+        # payload.get("sub")= 取出手環裡存的使用者帳號
+        if username is None:
+            raise HTTPException(status_code=401, detail = "無效的手環")
+    except Exception:
+        raise HTTPException(status_code=401, detail="無效的手環")
+    return username
+# 回傳使用者帳號，讓端點知道是誰在操作
+
 
 load_dotenv()
 # 執行「打開 .env、把裡面的值載入進來」
@@ -120,15 +139,15 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
  
 #登入
 @router.post("/login", response_model=Token)
-async def login(payload: UserCreate, db: AsyncSession = Depends(get_db)):
+async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
     # payload（資料）= 使用者傳進來的帳號和密碼
     from sqlalchemy import select
-    result = await db.execute(select(models.User).filter(models.User.username == payload.username))
+    result = await db.execute(select(models.User).filter(models.User.username == form_data.username))
     # select（選取）= 查詢資料庫
     # filter（篩選）= 找帳號跟使用者傳進來一樣的
     user = result.scalars().first()
     # scalars().first()= 取出第一筆結果
-    if not user or not verify_password(payload.password, user.hashed_password):
+    if not user or not verify_password(form_data.password, user.hashed_password):
         # not user = 帳號不存在
         # not verify_password(...) = 密碼不正確
         raise HTTPException(status_code=401, detail="帳號或密碼錯誤")
