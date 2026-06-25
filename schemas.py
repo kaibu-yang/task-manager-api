@@ -17,3 +17,13 @@ class TaskRead(TaskCreate):
     id: int
     model_config = {"from_attributes": True}
 # 讓 Pydantic 能從資料庫物件讀資料，沒有這行回傳時會出錯
+
+# 註冊時，使用者要傳進來的資料
+class UserCreate(BaseModel):
+    username: str
+    password: str
+# 登入成功後，回傳給使用者的 JWT 手環
+class Token(BaseModel):
+    access_token: str     # 手環的字串內容
+    token_type: str       # 手環的類型，固定是 "bearer"
+    # bearer（持有者）= 表示「持有這個手環的人」的意思

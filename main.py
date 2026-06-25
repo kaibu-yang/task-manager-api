@@ -10,7 +10,7 @@ from database import engine
 import models
 # 匯入 models.py（資料表定義）
 
-from routers import tasks
+from routers import tasks, auth
 # 從 routers 資料夾匯入 tasks.py
 
 # lifespan（生命週期）= 伺服器啟動時自動建立資料表
@@ -27,4 +27,5 @@ app = FastAPI(lifespan=lifespan)
 # 建立 FastAPI 應用程式，並把 lifespan 掛上去
 
 app.include_router(tasks.router)
+app.include_router(auth.router)
 # include_router（包含路由器）= 告訴 app「去 tasks.py 裡找端點」
