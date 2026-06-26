@@ -1,0 +1,26 @@
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: taskuser
+      POSTGRES_PASSWORD: taskpass
+      POSTGRES_DB: taskdb
+    # environment（環境變數）= 設定資料庫的帳號、密碼、名稱
+    ports:
+      - "5332:5432"
+    # ports（埠號對應）= 把容器的 5432 對應到本機的 5432
+
+  api: 
+    build: .
+    # build: .（建置）= 用目前資料夾的 Dockerfile 建置
+    ports:
+      - "8000:8000"
+    # ports（埠號對應）= 把容器的 8000 對應到本機的 8000
+    depends_on:
+      - db
+    # depends_on（依賴）= 要等 db 啟動後才啟動 api
+    environment:
+      DATABASE_URL: postgresql+psycopg://taskuser:taskpass@db:5432/taskdb
+      SECRET_KEY: ${SECRET_KEY}
+      ALGORITHM: ${ALGORITHM}
+    # environment（環境變數）= 從 .env 讀取設定
