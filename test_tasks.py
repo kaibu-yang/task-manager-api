@@ -68,9 +68,7 @@ async def setup_database():
 
 # 測試「建立任務」
 async def test_create_task():
-    # async def（非同步函式）= 非同步版的函式定義
     async with AsyncClient(
-        # AsyncClient（非同步客戶端）= 非同步版的假使用者工具
         transport=ASGITransport(app=app),
         # transport（傳輸層）= 告訴 AsyncClient 要跟哪個 app 溝通
         # ASGITransport（ASGI 傳輸層）= 連接 AsyncClient 和 FastAPI 的橋梁
