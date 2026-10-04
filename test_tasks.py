@@ -66,13 +66,23 @@ async def setup_database():
     async with engine.begin() as conn:
         await conn.run_sync(models.Base.metadata.drop_all)
 
+@pytest.fixture
+# fixture（前置準備）= 測試開始前先做好的事，測試只要在參數寫上名字就能拿到
+async def auth_headers():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        # 開一個假使用者 c，只用來註冊
+        r = await c.post("/register", json={"username": "tester", "password": "testpass123"})
+        # 註冊成功會直接回傳 token（你的 register 就是這樣設計的）
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+    # 組出入證：標頭名稱 Authorization，內容是 Bearer（持有者）加上 token
+
 # 測試「建立任務」
-async def test_create_task():
+async def test_create_task(auth_headers):
     async with AsyncClient(
         transport=ASGITransport(app=app),
-        # transport（傳輸層）= 告訴 AsyncClient 要跟哪個 app 溝通
+        # transport（傳輸層）= 告訴 AsyncClie nt 要跟哪個 app 溝通
         # ASGITransport（ASGI 傳輸層）= 連接 AsyncClient 和 FastAPI 的橋梁
-        base_url="http://test"
+        base_url="http://test", headers=auth_headers
         # base_url（基礎網址）= 測試用的假網址
     ) as client:
         # as client = 把這個假使用者取名叫 client
@@ -91,11 +101,11 @@ async def test_create_task():
         # ["title"] == "測試任務" = 確認標題正確
 
 # 測試「查詢全部任務」
-async def test_list_tasks():
+async def test_list_tasks(auth_headers):
     # async def（非同步函式）= 非同步版的函式定義
     async with AsyncClient(
         transport=ASGITransport(app=app),
-        base_url="http://test"
+        base_url="http://test", headers=auth_headers
     ) as client:
         # 先建立一筆任務
         await client.post("/tasks", json={"title": "任務一", "done": False})
@@ -110,10 +120,10 @@ async def test_list_tasks():
         # >= 1（大於等於 1）= 確認至少有一筆任務
 
 # 測試「查詢單筆任務」
-async def test_get_tasks():
+async def test_get_tasks(auth_headers):
     async with AsyncClient(
         transport=ASGITransport(app=app),
-        base_url="http://test"
+        base_url="http://test", headers=auth_headers
     ) as client:
         # 先建立一筆任務，拿到它的 id
         create = await client.post("/tasks", json={"title": "單筆任務", "done": False})
@@ -129,10 +139,10 @@ async def test_get_tasks():
         # 確認回傳的標題跟我們建立的一樣
 
 # 測試「查詢不存在的任務，應該回 404」
-async def test_get_task_not_found():
+async def test_get_task_not_found(auth_headers):
     async with AsyncClient(
         transport=ASGITransport(app=app),
-        base_url="http://test"
+        base_url="http://test", headers=auth_headers
     ) as client:
         response = await client.get("/tasks/99999")
         # 查一個不存在的 id（99999）
@@ -140,10 +150,10 @@ async def test_get_task_not_found():
         # 404（找不到）= 確認回應是「找不到這筆任務」
 
 # 測試「更新任務」
-async def test_update_task():
+async def test_update_task(auth_headers):
     async with AsyncClient(
         transport=ASGITransport(app=app),
-        base_url="http://test"
+        base_url="http://test", headers=auth_headers
     ) as client:
         # 先建立一筆任務
         create = await client.post("/tasks", json={"title": "舊標籤", "done": False})
@@ -162,10 +172,10 @@ async def test_update_task():
         # 確認完成狀態有改成 True
 
 # 測試「刪除任務」
-async def test_delete_task():
+async def test_delete_task(auth_headers):
     async with AsyncClient(
         transport=ASGITransport(app=app),
-        base_url="http://test"
+        base_url="http://test", headers=auth_headers
     ) as client:
         # 先建立一筆任務
         create = await client.post("/tasks", json={"title": "要刪除的任務", "done": False})
