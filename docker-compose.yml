@@ -15,7 +15,7 @@ services:
 
   api:
     build: .
-    command: sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000"
+    command: sh -c "alembic upgrade head && exec uvicorn main:app --host 0.0.0.0 --port 8000"
     # 先升級資料庫；成功了（&&）才啟動 API，施工失敗就不啟動
     ports:
       - "8000:8000"
