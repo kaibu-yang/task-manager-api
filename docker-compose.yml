@@ -5,22 +5,24 @@ services:
       POSTGRES_USER: taskuser
       POSTGRES_PASSWORD: taskpass
       POSTGRES_DB: taskdb
-    # environment（環境變數）= 設定資料庫的帳號、密碼、名稱
     ports:
-      - "5332:5432"
-    # ports（埠號對應）= 把容器的 5432 對應到本機的 5432
+      - "5332:5432"   # 左邊是本機門牌 5332，右邊是容器裡的 5432
+    healthcheck:   # healthcheck（健康檢查）：定期問資料庫準備好了沒
+      test: ["CMD-SHELL", "pg_isready -U taskuser -d taskdb"]   # pg_isready = 問「可以接受連線了嗎」
+      interval: 5s    # 每 5 秒問一次
+      timeout: 5s     # 5 秒沒回答就算這次失敗
+      retries: 10     # 連續失敗 10 次才判定不健康
 
-  api: 
+  api:
     build: .
-    # build: .（建置）= 用目前資料夾的 Dockerfile 建置
+    command: sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000"
+    # 先升級資料庫；成功了（&&）才啟動 API，施工失敗就不啟動
     ports:
       - "8000:8000"
-    # ports（埠號對應）= 把容器的 8000 對應到本機的 8000
     depends_on:
-      - db
-    # depends_on（依賴）= 要等 db 啟動後才啟動 api
+      db:
+        condition: service_healthy   # 等 db 健康檢查通過才啟動
     environment:
       DATABASE_URL: postgresql+psycopg://taskuser:taskpass@db:5432/taskdb
       SECRET_KEY: ${SECRET_KEY}
       ALGORITHM: ${ALGORITHM}
-    # environment（環境變數）= 從 .env 讀取設定
