@@ -1,0 +1,45 @@
+name: CI                  # 這個自動流程的名字
+on:                       # 什麼時候叫審稿員上班
+  pull_request:           # 有人開合併請求（PR）時
+  push:
+    branches: [main]      # 推送到 main 時
+  workflow_dispatch:      # 允許在網頁上手動執行
+
+permissions:              # permissions（權限）：審稿員被授權做什麼
+  contents: read          # 只能讀稿，不能改稿，遵守「權限最小化」
+
+jobs:
+  test:
+    runs-on: ubuntu-latest        # 全新的 Ubuntu 電腦
+
+    services:                     # services（服務）：作業旁邊臨時搭的設備
+      postgres:                   # 一個叫 postgres 的資料庫
+        image: postgres:15        # 版本與 docker-compose.yml 一致
+        env:                      # 資料庫的初始設定，要和測試檔寫死的連線一致
+          POSTGRES_USER: taskuser
+          POSTGRES_PASSWORD: taskpass
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432             # 讓這台電腦用 localhost:5432 連得到
+        options: >-
+          --health-cmd "pg_isready -U taskuser -d testdb"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:                          # 整個 job 共用的環境變數（取代 .env）
+      DATABASE_URL: postgresql+psycopg://taskuser:taskpass@localhost:5432/testdb
+      SECRET_KEY: ci-only-fake-secret-key-0123456789-not-for-production
+      ALGORITHM: HS256
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: alembic upgrade head   # 照施工單從零蓋出資料庫
+      - run: alembic check          # 確認模型與資料庫一致
+      - run: pytest -v              # 跑測試
+      
