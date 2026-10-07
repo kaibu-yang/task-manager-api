@@ -39,7 +39,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 # oauth2_scheme（OAuth2 方案）= 驗票員工具
 # tokenUrl="/login"（令牌網址）= 告訴它去哪裡取得手環（登入端點）
 
-async def get_current_user(token: str = Depends(oauth2_scheme)):
+async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)):
     # token（手環）= 從請求裡自動取出的 JWT 字串
     # Depends(oauth2_scheme)= 自動從請求的 Header 取出手環
     try:
@@ -51,8 +51,12 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
             raise HTTPException(status_code=401, detail = "無效的手環")
     except Exception:
         raise HTTPException(status_code=401, detail="無效的手環")
-    return username
-# 回傳使用者帳號，讓端點知道是誰在操作
+    from sqlalchemy import select  # 現在和 result 對齊，只有 try 成功時才會走到這裡
+    result = await db.execute(select(models.User).filter(models.User.username == username))
+    user = result.scalars().first()  # 取出第一筆；找不到就是 None
+    if user is None:  # token 有效，但這個帳號已經不在 users 表（例如被刪除）
+        raise HTTPException(status_code=401, detail="無效的手環")  # 一樣回 401
+    return user  # 回傳整個使用者物件，之後路由可以用 user.id
 
 
 load_dotenv()
