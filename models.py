@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey
 from database import Base
 
 # Task 的 ORM 模型：對應資料庫裡一張叫 "tasks" 的表格
@@ -9,6 +9,10 @@ class Task(Base):
     title = Column(String, nullable=False)
     description = Column(String, nullable=True)
     done = Column(Boolean, default=False)
+    user_id = Column(Integer, ForeignKey("users.id", name="fk_tasks_user_id_users"), nullable=True)
+# user_id = 這筆任務屬於哪位使用者
+# ForeignKey("users.id") = 值必須存在於 users 表的 id 欄；寫的是「表名.欄名」，不是類別名稱
+# nullable=True = 暫時允許空白（先擴大，等路由會填了再收緊）
 
     # User（使用者）資料表
 class User(Base):
