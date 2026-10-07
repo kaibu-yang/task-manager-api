@@ -190,3 +190,11 @@ async def test_delete_task(auth_headers):
         # check（確認）= 儲存再查一次的回應
         assert check.status_code == 404
         # 應該回 404，因為已經刪掉了
+
+async def test_create_task_sets_owner(auth_headers):  # 測試：建立的任務要有主人
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test", headers=auth_headers) as client:  # 帶著出入證的假使用者
+        response = await client.post("/tasks", json={"title": "有主人的任務"})  # 建立一筆任務
+    task_id = response.json()["id"]  # 取得剛建立的任務編號
+    async with TestingSessionLocal() as db:  # 直接連測試資料庫檢查（不透過 API）
+        task = await db.get(models.Task, task_id)  # 用編號把任務讀出來
+        assert task.user_id is not None  # 斷言：user_id 不能是空白

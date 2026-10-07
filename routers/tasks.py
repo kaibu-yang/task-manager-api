@@ -17,7 +17,7 @@ from routers.auth import get_current_user
 
 import models
 # 匯入 models.py（資料表定義）
-
+ 
 from schemas import TaskCreate, TaskRead
 # 從 schemas.py 匯入我們剛建立的兩個資料格式
 
@@ -27,8 +27,8 @@ router = APIRouter()
 
 # Create（建立）：新增一筆任務
 @router.post("/tasks", response_model=TaskRead)
-async def create_task(payload: TaskCreate, db: AsyncSession = Depends(get_db), current_user: str = Depends(get_current_user)):
-    task = models.Task(**payload.model_dump())
+async def create_task(payload: TaskCreate, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):  # current_user 現在是整個 User
+    task = models.Task(**payload.model_dump(), user_id=current_user.id)  # 請求內容加上主人，主人 id 來自 token
     db.add(task)
     await db.commit()
     await db.refresh(task)
