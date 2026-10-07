@@ -36,9 +36,9 @@ async def create_task(payload: TaskCreate, db: AsyncSession = Depends(get_db), c
 
 # Read（查全部）：列出所有任務
 @router.get("/tasks", response_model=list[TaskRead])
-async def list_tasks(db: AsyncSession = Depends(get_db), current_user: str = Depends(get_current_user)):
-    result = await db.execute(select(models.Task))
-    return result.scalars().all()
+async def list_tasks(db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):  # current_user 現在是整個 User
+    result = await db.execute(select(models.Task).where(models.Task.user_id == current_user.id))  # 只查 user_id 等於登入者 id 的任務
+    return result.scalars().all()  # 取出全部結果，這行沒有改
 
 # Read（查單筆）：依 id 查詢
 @router.get("/tasks/{task_id}", response_model=TaskRead)

@@ -76,6 +76,12 @@ async def auth_headers():
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
     # 組出入證：標頭名稱 Authorization，內容是 Bearer（持有者）加上 token
 
+@pytest.fixture  # fixture（前置準備）：測試開始前先做好的事
+async def other_headers():  # 第二位使用者 other 的出入證
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:  # 假使用者 c
+        r = await c.post("/register", json={"username": "other", "password": "otherpass123"})  # 註冊第二個帳號
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}  # 組出入證
+
 # 測試「建立任務」
 async def test_create_task(auth_headers):
     async with AsyncClient(
@@ -198,3 +204,9 @@ async def test_create_task_sets_owner(auth_headers):  # 測試：建立的任務
     async with TestingSessionLocal() as db:  # 直接連測試資料庫檢查（不透過 API）
         task = await db.get(models.Task, task_id)  # 用編號把任務讀出來
         assert task.user_id is not None  # 斷言：user_id 不能是空白
+
+async def test_list_only_own_tasks(auth_headers, other_headers):  # 測試：只看得到自己的任務
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 這次不預設帶出入證
+        await client.post("/tasks", json={"title": "A 的任務"}, headers=auth_headers)  # A 建立一筆任務
+        response = await client.get("/tasks", headers=other_headers)  # B 查詢全部任務
+    assert response.json() == []  # B 應該什麼都看不到：清單是空的
