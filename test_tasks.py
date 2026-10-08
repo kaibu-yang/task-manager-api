@@ -210,3 +210,12 @@ async def test_list_only_own_tasks(auth_headers, other_headers):  # 測試：只
         await client.post("/tasks", json={"title": "A 的任務"}, headers=auth_headers)  # A 建立一筆任務
         response = await client.get("/tasks", headers=other_headers)  # B 查詢全部任務
     assert response.json() == []  # B 應該什麼都看不到：清單是空的
+
+async def test_cannot_access_others_task(auth_headers, other_headers):  # 測試：不能碰別人的任務
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 假使用者
+        created = await client.post("/tasks", json={"title": "A 的任務"}, headers=auth_headers)  # A 建立一筆任務
+        url = f"/tasks/{created.json()['id']}"  # 這筆任務的網址，例如 /tasks/1
+        assert (await client.get(url, headers=other_headers)).status_code == 404  # B 想讀：應該找不到
+        assert (await client.put(url, json={"title": "被改了"}, headers=other_headers)).status_code == 404  # B 想改
+        assert (await client.delete(url, headers=other_headers)).status_code == 404  # B 想刪
+        assert (await client.get(url, headers=auth_headers)).status_code == 200  # A 自己還讀得到，證明沒被動過
