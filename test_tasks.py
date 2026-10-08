@@ -76,6 +76,12 @@ async def auth_headers():
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
     # 組出入證：標頭名稱 Authorization，內容是 Bearer（持有者）加上 token
 
+@pytest.fixture  # fixture（前置準備）：測試開始前先做好的事
+async def other_headers():  # 第二位使用者 other 的出入證
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:  # 假使用者 c
+        r = await c.post("/register", json={"username": "other", "password": "otherpass123"})  # 註冊第二個帳號
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}  # 組出入證
+
 # 測試「建立任務」
 async def test_create_task(auth_headers):
     async with AsyncClient(
@@ -190,3 +196,26 @@ async def test_delete_task(auth_headers):
         # check（確認）= 儲存再查一次的回應
         assert check.status_code == 404
         # 應該回 404，因為已經刪掉了
+
+async def test_create_task_sets_owner(auth_headers):  # 測試：建立的任務要有主人
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test", headers=auth_headers) as client:  # 帶著出入證的假使用者
+        response = await client.post("/tasks", json={"title": "有主人的任務"})  # 建立一筆任務
+    task_id = response.json()["id"]  # 取得剛建立的任務編號
+    async with TestingSessionLocal() as db:  # 直接連測試資料庫檢查（不透過 API）
+        task = await db.get(models.Task, task_id)  # 用編號把任務讀出來
+        assert task.user_id is not None  # 斷言：user_id 不能是空白
+
+async def test_list_only_own_tasks(auth_headers, other_headers):  # 測試：只看得到自己的任務
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 這次不預設帶出入證
+        await client.post("/tasks", json={"title": "A 的任務"}, headers=auth_headers)  # A 建立一筆任務
+        response = await client.get("/tasks", headers=other_headers)  # B 查詢全部任務
+    assert response.json() == []  # B 應該什麼都看不到：清單是空的
+
+async def test_cannot_access_others_task(auth_headers, other_headers):  # 測試：不能碰別人的任務
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 假使用者
+        created = await client.post("/tasks", json={"title": "A 的任務"}, headers=auth_headers)  # A 建立一筆任務
+        url = f"/tasks/{created.json()['id']}"  # 這筆任務的網址，例如 /tasks/1
+        assert (await client.get(url, headers=other_headers)).status_code == 404  # B 想讀：應該找不到
+        assert (await client.put(url, json={"title": "被改了"}, headers=other_headers)).status_code == 404  # B 想改
+        assert (await client.delete(url, headers=other_headers)).status_code == 404  # B 想刪
+        assert (await client.get(url, headers=auth_headers)).status_code == 200  # A 自己還讀得到，證明沒被動過
