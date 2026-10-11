@@ -219,3 +219,18 @@ async def test_cannot_access_others_task(auth_headers, other_headers):  # 測試
         assert (await client.put(url, json={"title": "被改了"}, headers=other_headers)).status_code == 404  # B 想改
         assert (await client.delete(url, headers=other_headers)).status_code == 404  # B 想刪
         assert (await client.get(url, headers=auth_headers)).status_code == 200  # A 自己還讀得到，證明沒被動過
+
+
+async def test_list_tasks_pagination(auth_headers):  # 測試：分頁只回傳指定筆數
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 假使用者
+        for i in range(5):  # 重複 5 次（i 依序是 0 到 4）
+            await client.post("/tasks", json={"title": f"任務{i}"}, headers=auth_headers)  # 建立 5 筆任務
+        page1 = await client.get("/tasks?limit=2&offset=0", headers=auth_headers)  # 第 1 頁：拿 2 筆
+        page2 = await client.get("/tasks?limit=2&offset=2", headers=auth_headers)  # 第 2 頁：跳過 2 筆再拿 2 筆
+    assert [t["title"] for t in page1.json()] == ["任務0", "任務1"]  # 第 1 頁應是前兩筆
+    assert [t["title"] for t in page2.json()] == ["任務2", "任務3"]  # 第 2 頁應是接下來兩筆
+
+async def test_list_tasks_limit_too_large(auth_headers):  # 測試：limit 超過上限要被擋下
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 假使用者
+        response = await client.get("/tasks?limit=101", headers=auth_headers)  # 傳超過上限的 limit
+    assert response.status_code == 422  # 422（參數不合格）：FastAPI 自動擋下
