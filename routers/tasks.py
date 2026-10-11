@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 # fastapi（API 框架）匯入三個工具：
 # APIRouter（路由器）= 把端點分組管理的工具，等下會解釋
 # HTTPException（HTTP 例外）= 回傳錯誤給使用者，例如 404 找不到
 # Depends（依賴）= 讓端點自動取得資料庫連線
+# Query（查詢參數設定工具）：設定網址 ? 後面的參數
 
 from sqlalchemy.ext.asyncio import AsyncSession
 # AsyncSession（非同步會話）= 跟資料庫對話的工具（非同步版）
@@ -39,10 +40,11 @@ async def create_task(payload: TaskCreate, db: AsyncSession = Depends(get_db), c
     return task
 
 # Read（查全部）：列出所有任務
-@router.get("/tasks", response_model=list[TaskRead])
-async def list_tasks(db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):  # current_user 現在是整個 User
-    result = await db.execute(select(models.Task).where(models.Task.user_id == current_user.id))  # 只查 user_id 等於登入者 id 的任務
-    return result.scalars().all()  # 取出全部結果，這行沒有改
+@router.get("/tasks", response_model=list[TaskRead])  # 網址 GET /tasks；回傳格式是 TaskRead 的清單
+async def list_tasks(limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0), db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):  # limit 預設 20、1 到 100；offset 預設 0、不能是負數
+    query = select(models.Task).where(models.Task.user_id == current_user.id).order_by(models.Task.id).limit(limit).offset(offset)  # 只查自己的，依 id 排序，再切一頁
+    result = await db.execute(query)  # 執行查詢
+    return result.scalars().all()  # 取出這一頁的結果
 
 # Read（查單筆）：依 id 查詢
 @router.get("/tasks/{task_id}", response_model=TaskRead)
