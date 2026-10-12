@@ -5,11 +5,11 @@ from database import Base
 class Task(Base):
     __tablename__ = "tasks"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     title = Column(String, nullable=False)
     description = Column(String, nullable=True)
     done = Column(Boolean, default=False)
-    user_id = Column(Integer, ForeignKey("users.id", name="fk_tasks_user_id_users"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", name="fk_tasks_user_id_users"), nullable=False, index=True)
 # user_id = 這筆任務屬於哪位使用者
 # ForeignKey("users.id") = 值必須存在於 users 表的 id 欄；寫的是「表名.欄名」，不是類別名稱
 # nullable=False = 不准空白(原先是可空白，現已收緊更改為不准空白)
@@ -20,7 +20,7 @@ class User(Base):
     __tablename__ = "users"
     # __tablename__（資料表名稱）= 這張表在資料庫裡叫做 users
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     # id（編號）= 每個使用者的唯一身分證，資料庫自動產生
     username = Column(String, unique=True, nullable=False)
     # username（使用者名稱）= 帳號，不能重複（unique），必填（nullable=False）
