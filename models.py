@@ -5,7 +5,7 @@ from database import Base
 class Task(Base):
     __tablename__ = "tasks"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     title = Column(String, nullable=False)
     description = Column(String, nullable=True)
     done = Column(Boolean, default=False)
@@ -20,7 +20,7 @@ class User(Base):
     __tablename__ = "users"
     # __tablename__（資料表名稱）= 這張表在資料庫裡叫做 users
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     # id（編號）= 每個使用者的唯一身分證，資料庫自動產生
     username = Column(String, unique=True, nullable=False)
     # username（使用者名稱）= 帳號，不能重複（unique），必填（nullable=False）
