@@ -250,3 +250,25 @@ async def test_list_tasks_filter_done_true(auth_headers):  # 測試：done=true 
         response = await client.get("/tasks?done=true", headers=auth_headers)  # 只要已完成的
     assert response.status_code == 200  # 確認請求成功
     assert [t["title"] for t in response.json()] == ["已完成"]  # 只能有「已完成」這一筆
+
+async def test_list_tasks_sort_by_not_allowed(auth_headers):  # 測試：排序欄位不在白名單內要被擋下
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 假使用者
+        response = await client.get("/tasks?sort_by=hashed_password", headers=auth_headers)  # 傳一個不在名單內的欄位
+    assert response.status_code == 422  # 422（參數不合格）：應該被擋下
+
+async def test_list_tasks_sort_by_title(auth_headers):  # 測試：依 title 排序，順序要正確
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 假使用者
+        for title in ["C", "A", "B"]:  # 故意用打亂的順序建立
+            await client.post("/tasks", json={"title": title}, headers=auth_headers)  # 建立一筆任務
+        response = await client.get("/tasks?sort_by=title", headers=auth_headers)  # 依 title 排序
+    assert [t["title"] for t in response.json()] == ["A", "B", "C"]  # 應該是 A、B、C
+
+async def test_list_tasks_sort_by_title_pagination_stable(auth_headers):  # 測試：title 重複時，分頁不重複、不遺漏
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 假使用者
+        for i in range(5):  # 建 5 筆 title 完全相同的任務
+            await client.post("/tasks", json={"title": "同名", "description": str(i)}, headers=auth_headers)  # description 用來分辨是哪一筆
+        page1 = await client.get("/tasks?sort_by=title&limit=2&offset=0", headers=auth_headers)  # 第 1 頁
+        page2 = await client.get("/tasks?sort_by=title&limit=2&offset=2", headers=auth_headers)  # 第 2 頁
+        page3 = await client.get("/tasks?sort_by=title&limit=2&offset=4", headers=auth_headers)  # 第 3 頁
+    seen = [t["description"] for p in (page1, page2, page3) for t in p.json()]  # 把三頁的 description 串起來
+    assert seen == ["0", "1", "2", "3", "4"]  # 應該每筆各出現一次，且順序固定（依 id）
