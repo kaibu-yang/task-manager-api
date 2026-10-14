@@ -41,8 +41,10 @@ async def create_task(payload: TaskCreate, db: AsyncSession = Depends(get_db), c
 
 # Read（查全部）：列出所有任務
 @router.get("/tasks", response_model=list[TaskRead])  # 網址 GET /tasks；回傳格式是 TaskRead 的清單
-async def list_tasks(limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0), db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):  # limit 預設 20、1 到 100；offset 預設 0、不能是負數
+async def list_tasks(limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0), done: bool | None = None, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):  # 新增 done：沒傳就是 None，代表不篩選
     query = select(models.Task).where(models.Task.user_id == current_user.id).order_by(models.Task.id).limit(limit).offset(offset)  # 只查自己的，依 id 排序，再切一頁
+    if done is not None:  # 有傳 done 才篩選；沒傳就跳過
+        query = query.where(models.Task.done == done)  # 在原本的查詢上多加一條：done 等於傳進來的值
     result = await db.execute(query)  # 執行查詢
     return result.scalars().all()  # 取出這一頁的結果
 

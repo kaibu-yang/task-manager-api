@@ -234,3 +234,19 @@ async def test_list_tasks_limit_too_large(auth_headers):  # 測試：limit 超�
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 假使用者
         response = await client.get("/tasks?limit=101", headers=auth_headers)  # 傳超過上限的 limit
     assert response.status_code == 422  # 422（參數不合格）：FastAPI 自動擋下
+
+async def test_list_tasks_filter_done(auth_headers):  # 測試：用 done 篩選，只回傳符合的任務
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 假使用者
+        await client.post("/tasks", json={"title": "未完成", "done": False}, headers=auth_headers)  # 建一筆未完成
+        await client.post("/tasks", json={"title": "已完成", "done": True}, headers=auth_headers)  # 建一筆已完成
+        response = await client.get("/tasks?done=false", headers=auth_headers)  # 只要未完成的
+    assert response.status_code == 200  # 確認請求成功
+    assert [t["title"] for t in response.json()] == ["未完成"]  # 回來的標題只能有「未完成」這一筆
+
+async def test_list_tasks_filter_done_true(auth_headers):  # 測試：done=true 只回已完成的
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 假使用者
+        await client.post("/tasks", json={"title": "未完成", "done": False}, headers=auth_headers)  # 建一筆未完成
+        await client.post("/tasks", json={"title": "已完成", "done": True}, headers=auth_headers)  # 建一筆已完成
+        response = await client.get("/tasks?done=true", headers=auth_headers)  # 只要已完成的
+    assert response.status_code == 200  # 確認請求成功
+    assert [t["title"] for t in response.json()] == ["已完成"]  # 只能有「已完成」這一筆
