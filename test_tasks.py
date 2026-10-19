@@ -272,3 +272,9 @@ async def test_list_tasks_sort_by_title_pagination_stable(auth_headers):  # 測�
         page3 = await client.get("/tasks?sort_by=title&limit=2&offset=4", headers=auth_headers)  # 第 3 頁
     seen = [t["description"] for p in (page1, page2, page3) for t in p.json()]  # 把三頁的 description 串起來
     assert seen == ["0", "1", "2", "3", "4"]  # 應該每筆各出現一次，且順序固定（依 id）
+
+async def test_not_found_error_format(auth_headers):  # 測試：404 錯誤要用統一格式
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 假使用者
+        response = await client.get("/tasks/99999", headers=auth_headers)  # 查一筆不存在的任務
+    assert response.status_code == 404  # 狀態碼還是 404，格式改了但意思不變
+    assert response.json() == {"error": {"code": "TASK_NOT_FOUND", "message": "找不到這筆任務"}}  # 內容要「完全等於」新格式

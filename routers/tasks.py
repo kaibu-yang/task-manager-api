@@ -1,12 +1,14 @@
 from enum import Enum 
 # Enum（列舉）：把允許的選項先一個個列出來的清單型別
 
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, Depends, Query
 # fastapi（API 框架）匯入三個工具：
 # APIRouter（路由器）= 把端點分組管理的工具，等下會解釋
-# HTTPException（HTTP 例外）= 回傳錯誤給使用者，例如 404 找不到
 # Depends（依賴）= 讓端點自動取得資料庫連線
 # Query（查詢參數設定工具）：設定網址 ? 後面的參數
+
+from errors import AppError  # 匯入自訂錯誤類別，取代 HTTPException
+
 
 from sqlalchemy.ext.asyncio import AsyncSession
 # AsyncSession（非同步會話）= 跟資料庫對話的工具（非同步版）
@@ -62,7 +64,7 @@ async def list_tasks(limit: int = Query(20, ge=1, le=100), offset: int = Query(0
 async def get_task(task_id: int, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     task = await get_own_task(db, task_id, current_user)
     if task is None:
-        raise HTTPException(status_code=404, detail="找不到這筆任務")
+        raise AppError(404, "TASK_NOT_FOUND", "找不到這筆任務")  # 改用自訂錯誤，帶上英文代碼，交給新櫃台處理
     return task
 
 # Update（更新）：改某一筆任務
@@ -70,7 +72,7 @@ async def get_task(task_id: int, db: AsyncSession = Depends(get_db), current_use
 async def update_task(task_id: int, payload: TaskCreate, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     task = await get_own_task(db, task_id, current_user)
     if task is None:
-        raise HTTPException(status_code=404, detail="找不到這筆任務")
+        raise AppError(404, "TASK_NOT_FOUND", "找不到這筆任務")  # 改用自訂錯誤，帶上英文代碼，交給新櫃台處理
     task.title = payload.title
     task.description = payload.description
     task.done = payload.done
@@ -83,7 +85,7 @@ async def update_task(task_id: int, payload: TaskCreate, db: AsyncSession = Depe
 async def delete_task(task_id: int, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     task = await get_own_task(db, task_id, current_user)
     if task is None:
-        raise HTTPException(status_code=404, detail="找不到這筆任務")
+        raise AppError(404, "TASK_NOT_FOUND", "找不到這筆任務")  # 改用自訂錯誤，帶上英文代碼，交給新櫃台處理
     await db.delete(task)
     await db.commit()
     return {"message": f"任務 {task_id} 已刪除"}
