@@ -1,6 +1,7 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 # datetime（日期時間）= Python 內建的時間工具
 # timedelta（時間差）= 用來計算「幾分鐘後過期」的工具
+# timezone（時區），用來標明 UTC
 
 from jose import jwt
 # jose（JWT 工具套件）= 處理 JWT 手環的套件
@@ -91,8 +92,9 @@ def create_access_token(data: dict) -> str:
     # data（資料）= 要放進手環裡的資訊，例如使用者帳號
     to_encode = data.copy()
     # copy()（複製）= 複製一份資料，避免修改到原本的
-    expire = datetime.utcnow() + timedelta(minutes=30)
-    # datetime.utcnow()（現在的時間）= 取得目前的時間
+    expire = datetime.now(timezone.utc) + timedelta(minutes=30)
+    # 取得「標明是 UTC」的現在時間，再加 30 分鐘
+    # datetime.now(timezone.utc)（現在的 UTC 時間）= 取得標明時區的目前時間
     # timedelta(minutes=30)（30分鐘後）= 手環 30 分鐘後過期
     to_encode.update({"exp": expire})
     # update（更新）= 把過期時間加進去
