@@ -17,7 +17,10 @@ import os
 from dotenv import load_dotenv
 # dotenv（環境變數工具）= 讀取 .env 檔案的工具
 
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, Depends, status
+
+from errors import AppError  # 匯入自訂錯誤類別，取代 HTTPException
+
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 # OAuth2PasswordRequestForm（OAuth2 密碼請求表單）= 接收表單格式的帳號密碼
 
@@ -49,14 +52,14 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession
         username = payload.get("sub")
         # payload.get("sub")= 取出手環裡存的使用者帳號
         if username is None:
-            raise HTTPException(status_code=401, detail = "無效的手環")
+            raise AppError(401, "INVALID_TOKEN", "無效的手環")  # 手環無效：解不開、沒有帳號、或帳號已不存在)
     except Exception:
-        raise HTTPException(status_code=401, detail="無效的手環")
+        raise AppError(401, "INVALID_TOKEN", "無效的手環")  # 手環無效：解不開、沒有帳號、或帳號已不存在
     from sqlalchemy import select  # 現在和 result 對齊，只有 try 成功時才會走到這裡
     result = await db.execute(select(models.User).filter(models.User.username == username))
     user = result.scalars().first()  # 取出第一筆；找不到就是 None
     if user is None:  # token 有效，但這個帳號已經不在 users 表（例如被刪除）
-        raise HTTPException(status_code=401, detail="無效的手環")  # 一樣回 401
+        raise AppError(401, "INVALID_TOKEN", "無效的手環")  # 手環無效：解不開、沒有帳號、或帳號已不存在、一樣回 401
     return user  # 回傳整個使用者物件，之後路由可以用 user.id
 
 
@@ -116,8 +119,7 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
     existing_user = result.scalars().first()
     # scalars().first()= 取出第一筆結果
     if existing_user:
-        raise HTTPException(status_code=400, detail="帳號已經存在")
-    # status_code=400（錯誤請求）= 使用者傳來的資料有問題
+        raise AppError(400, "USERNAME_TAKEN", "帳號已經存在")  # 帳號被用過了
 
     # 把密碼加密後，建立新使用者
     hashed_pw = hash_password(payload.password)
@@ -156,8 +158,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
     if not user or not verify_password(form_data.password, user.hashed_password):
         # not user = 帳號不存在
         # not verify_password(...) = 密碼不正確
-        raise HTTPException(status_code=401, detail="帳號或密碼錯誤")
-        # status_code=401（未授權）= 身份驗證失敗
+        raise AppError(401, "INVALID_CREDENTIALS", "帳號或密碼錯誤")  # credentials（憑證）= 帳號密碼；不說是哪個錯，避免洩漏帳號是否存在
     token = create_access_token({"sub": user.username})
     # create_access_token（產生手環）= 產生 JWT 手環
     # "sub"（subject，主體）= JWT 規定的欄位，存放使用者帳號

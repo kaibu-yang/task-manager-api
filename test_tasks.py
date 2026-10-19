@@ -278,3 +278,23 @@ async def test_not_found_error_format(auth_headers):  # 測試：404 錯誤要�
         response = await client.get("/tasks/99999", headers=auth_headers)  # 查一筆不存在的任務
     assert response.status_code == 404  # 狀態碼還是 404，格式改了但意思不變
     assert response.json() == {"error": {"code": "TASK_NOT_FOUND", "message": "找不到這筆任務"}}  # 內容要「完全等於」新格式
+
+async def test_register_duplicate_error_format():  # 測試：重複註冊要用統一格式
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 假使用者
+        await client.post("/register", json={"username": "dup", "password": "duppass123"})  # 第一次註冊：成功
+        response = await client.post("/register", json={"username": "dup", "password": "duppass123"})  # 第二次用同一個帳號
+    assert response.status_code == 400  # 400（錯誤請求）
+    assert response.json() == {"error": {"code": "USERNAME_TAKEN", "message": "帳號已經存在"}}  # 要完全等於新格式
+
+async def test_login_wrong_password_error_format():  # 測試：密碼錯誤要用統一格式
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 假使用者
+        await client.post("/register", json={"username": "loginer", "password": "rightpass123"})  # 先註冊一個帳號
+        response = await client.post("/login", data={"username": "loginer", "password": "wrongpass123"})  # 用錯的密碼登入
+    assert response.status_code == 401  # 401（未授權）
+    assert response.json() == {"error": {"code": "INVALID_CREDENTIALS", "message": "帳號或密碼錯誤"}}  # 要完全等於新格式
+
+async def test_invalid_token_error_format():  # 測試：無效的手環要用統一格式
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 假使用者
+        response = await client.get("/tasks", headers={"Authorization": "Bearer not-a-real-token"})  # 帶一個亂寫的手環
+    assert response.status_code == 401  # 401（未授權）
+    assert response.json() == {"error": {"code": "INVALID_TOKEN", "message": "無效的手環"}}  # 要完全等於新格式
