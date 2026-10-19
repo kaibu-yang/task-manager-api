@@ -39,13 +39,17 @@ from schemas import UserCreate, Token
 router = APIRouter()
 # router（路由器）= 建立一個路由器物件，端點都掛在這上面
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login", auto_error=False)  
+# auto_error=False：沒帶手環不自己報錯，交給 get_current_user 處理
 # oauth2_scheme（OAuth2 方案）= 驗票員工具
 # tokenUrl="/login"（令牌網址）= 告訴它去哪裡取得手環（登入端點）
 
-async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)):
+async def get_current_user(token: str | None = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)):
     # token（手環）= 從請求裡自動取出的 JWT 字串
     # Depends(oauth2_scheme)= 自動從請求的 Header 取出手環
+    if token is None:  # 沒帶手環（驗票員不再自己報錯，改由這裡處理）
+        raise AppError(401, "NOT_AUTHENTICATED", "請先登入")  # 跟「手環無效」分開，前端才知道是要登入，還是要重新登入
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         # jwt.decode（解碼）= 把 JWT 手環解開，取出裡面的資料

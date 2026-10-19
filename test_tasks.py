@@ -298,3 +298,9 @@ async def test_invalid_token_error_format():  # 測試：無效的手環要用�
         response = await client.get("/tasks", headers={"Authorization": "Bearer not-a-real-token"})  # 帶一個亂寫的手環
     assert response.status_code == 401  # 401（未授權）
     assert response.json() == {"error": {"code": "INVALID_TOKEN", "message": "無效的手環"}}  # 要完全等於新格式
+
+async def test_not_authenticated_error_format():  # 測試：沒帶手環要用統一格式
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 假使用者
+        response = await client.get("/tasks")  # 完全不帶 Authorization 標頭
+    assert response.status_code == 401  # 401（未授權）
+    assert response.json() == {"error": {"code": "NOT_AUTHENTICATED", "message": "請先登入"}}  # 要完全等於新格式
