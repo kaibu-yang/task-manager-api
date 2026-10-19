@@ -272,3 +272,62 @@ async def test_list_tasks_sort_by_title_pagination_stable(auth_headers):  # 測�
         page3 = await client.get("/tasks?sort_by=title&limit=2&offset=4", headers=auth_headers)  # 第 3 頁
     seen = [t["description"] for p in (page1, page2, page3) for t in p.json()]  # 把三頁的 description 串起來
     assert seen == ["0", "1", "2", "3", "4"]  # 應該每筆各出現一次，且順序固定（依 id）
+
+async def test_not_found_error_format(auth_headers):  # 測試：404 錯誤要用統一格式
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 假使用者
+        response = await client.get("/tasks/99999", headers=auth_headers)  # 查一筆不存在的任務
+    assert response.status_code == 404  # 狀態碼還是 404，格式改了但意思不變
+    assert response.json() == {"error": {"code": "TASK_NOT_FOUND", "message": "找不到這筆任務"}}  # 內容要「完全等於」新格式
+
+async def test_register_duplicate_error_format():  # 測試：重複註冊要用統一格式
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 假使用者
+        await client.post("/register", json={"username": "dup", "password": "duppass123"})  # 第一次註冊：成功
+        response = await client.post("/register", json={"username": "dup", "password": "duppass123"})  # 第二次用同一個帳號
+    assert response.status_code == 400  # 400（錯誤請求）
+    assert response.json() == {"error": {"code": "USERNAME_TAKEN", "message": "帳號已經存在"}}  # 要完全等於新格式
+
+async def test_login_wrong_password_error_format():  # 測試：密碼錯誤要用統一格式
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 假使用者
+        await client.post("/register", json={"username": "loginer", "password": "rightpass123"})  # 先註冊一個帳號
+        response = await client.post("/login", data={"username": "loginer", "password": "wrongpass123"})  # 用錯的密碼登入
+    assert response.status_code == 401  # 401（未授權）
+    assert response.json() == {"error": {"code": "INVALID_CREDENTIALS", "message": "帳號或密碼錯誤"}}  # 要完全等於新格式
+
+async def test_invalid_token_error_format():  # 測試：無效的手環要用統一格式
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 假使用者
+        response = await client.get("/tasks", headers={"Authorization": "Bearer not-a-real-token"})  # 帶一個亂寫的手環
+    assert response.status_code == 401  # 401（未授權）
+    assert response.json() == {"error": {"code": "INVALID_TOKEN", "message": "無效的手環"}}  # 要完全等於新格式
+
+async def test_not_authenticated_error_format():  # 測試：沒帶手環要用統一格式
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 假使用者
+        response = await client.get("/tasks")  # 完全不帶 Authorization 標頭
+    assert response.status_code == 401  # 401（未授權）
+    assert response.json() == {"error": {"code": "NOT_AUTHENTICATED", "message": "請先登入"}}  # 要完全等於新格式
+
+async def test_validation_error_format():  # 測試：422 參數錯誤要用統一格式
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 假使用者
+        response = await client.post("/register", json={})  # 帳號、密碼都不填
+    assert response.status_code == 422  # 422（參數不合格）
+    assert response.json() == {"error": {  # 外層一樣是 error
+        "code": "VALIDATION_ERROR",  # 所有參數錯誤共用這個代碼
+        "message": "請求資料格式錯誤",  # 整體的中文說明
+        "details": [  # 每個出錯的欄位一項
+            {"field": "username", "message": "此欄位為必填"},  # 帳號沒填
+            {"field": "password", "message": "此欄位為必填"},  # 密碼沒填
+        ],
+    }}
+
+
+async def test_unknown_route_error_format():  # 測試：網址打錯要用統一格式
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 假使用者
+        response = await client.get("/no-such-page")  # 一個不存在的網址
+    assert response.status_code == 404  # 404（找不到）
+    assert response.json() == {"error": {"code": "NOT_FOUND", "message": "找不到這個網址"}}  # 要完全等於新格式
+
+
+async def test_method_not_allowed_error_format():  # 測試：方法用錯要用統一格式
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 假使用者
+        response = await client.patch("/tasks")  # /tasks 沒有 PATCH 方法
+    assert response.status_code == 405  # 405（方法不允許）
+    assert response.json() == {"error": {"code": "METHOD_NOT_ALLOWED", "message": "不支援這個請求方法"}}  # 要完全等於新格式
