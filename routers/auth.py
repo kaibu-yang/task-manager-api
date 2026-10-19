@@ -11,11 +11,9 @@ from passlib.context import CryptContext
 # passlib（密碼工具套件）= 處理密碼加密的套件
 # CryptContext（加密環境）= 設定要用哪種加密方式的工具
 
-import os
-# os（作業系統）= Python 內建，讓我們能讀電腦的環境變數
+from config import settings
+# settings（設定櫃台）= 啟動時已清點好的設定，缺必填值會直接拒絕啟動
 
-from dotenv import load_dotenv
-# dotenv（環境變數工具）= 讀取 .env 檔案的工具
 
 from fastapi import APIRouter, Depends, status
 
@@ -67,14 +65,12 @@ async def get_current_user(token: str | None = Depends(oauth2_scheme), db: Async
     return user  # 回傳整個使用者物件，之後路由可以用 user.id
 
 
-load_dotenv()
-# 執行「打開 .env、把裡面的值載入進來」
+SECRET_KEY = settings.secret_key
+# 找櫃台拿 JWT 簽名密鑰（必填，保證有值）
 
-SECRET_KEY = os.getenv("SECRET_KEY")
-# 從 .env 讀取密鑰
+ALGORITHM = settings.algorithm
+# 找櫃台拿加密演算法（沒設定就用預設的 HS256）
 
-ALGORITHM = os.getenv("ALGORITHM")
-# 從 .env 讀取加密演算法
 
 # 建立密碼加密工具
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
