@@ -317,3 +317,17 @@ async def test_validation_error_format():  # 測試：422 參數錯誤要用統�
             {"field": "password", "message": "此欄位為必填"},  # 密碼沒填
         ],
     }}
+
+
+async def test_unknown_route_error_format():  # 測試：網址打錯要用統一格式
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 假使用者
+        response = await client.get("/no-such-page")  # 一個不存在的網址
+    assert response.status_code == 404  # 404（找不到）
+    assert response.json() == {"error": {"code": "NOT_FOUND", "message": "找不到這個網址"}}  # 要完全等於新格式
+
+
+async def test_method_not_allowed_error_format():  # 測試：方法用錯要用統一格式
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 假使用者
+        response = await client.patch("/tasks")  # /tasks 沒有 PATCH 方法
+    assert response.status_code == 405  # 405（方法不允許）
+    assert response.json() == {"error": {"code": "METHOD_NOT_ALLOWED", "message": "不支援這個請求方法"}}  # 要完全等於新格式

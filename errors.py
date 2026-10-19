@@ -4,6 +4,9 @@ from fastapi.responses import JSONResponse  # 組出要回傳的 JSON
 
 from fastapi.exceptions import RequestValidationError  # FastAPI 檢查參數失敗時丟出的錯誤
 
+from starlette.exceptions import HTTPException as StarletteHTTPException  # Starlette 底層的 HTTP 錯誤（網址錯、方法錯）
+
+
 
 
 class AppError(Exception):  # 自訂錯誤類別，繼承 Exception 才能被 raise
@@ -25,6 +28,13 @@ VALIDATION_MESSAGES = {  # 翻譯對照表：Pydantic 的錯誤種類（type）�
 }
 
 
+HTTP_ERROR_MESSAGES = {  # 對照表：狀態碼 → (英文代碼, 中文訊息)
+    404: ("NOT_FOUND", "找不到這個網址"),  # 網址打錯
+    405: ("METHOD_NOT_ALLOWED", "不支援這個請求方法"),  # 方法用錯，例如對 /tasks 送 PATCH
+}
+
+
+
 async def app_error_handler(request: Request, exc: AppError):  # 櫃台：處理 AppError（從 main.py 搬來，拿掉了 @app）
     return JSONResponse(  # 回傳 JSON
         status_code=exc.status_code,  # 狀態碼用錯誤身上帶的
@@ -43,10 +53,22 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
     )
 
 
+async def http_error_handler(request: Request, exc: StarletteHTTPException):  # 櫃台：處理 Starlette 的 HTTP 錯誤
+    code, message = HTTP_ERROR_MESSAGES.get(exc.status_code, ("HTTP_ERROR", "請求發生錯誤"))  # 查表；查不到用預設值
+    return JSONResponse(  # 回傳 JSON
+        status_code=exc.status_code,  # 狀態碼照原本的（404、405…）
+        content={"error": {"code": code, "message": message}},  # 統一格式
+        headers=exc.headers,  # 保留原本的標頭，例如 405 會附上「允許哪些方法」
+    )
+
+
+
 
 def register_exception_handlers(app: FastAPI):  # 登記函式：把所有櫃台接到 app 上
     app.add_exception_handler(AppError, app_error_handler)  # 作用等同原本的 @app.exception_handler(AppError)
     app.add_exception_handler(RequestValidationError, validation_error_handler)  # 參數錯誤交給 422 櫃台
+    app.add_exception_handler(StarletteHTTPException, http_error_handler)  # 網址錯、方法錯交給這個櫃台
+
 
 
 
