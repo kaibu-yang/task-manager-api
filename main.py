@@ -1,6 +1,6 @@
-from fastapi import FastAPI, Request  # 多匯入 Request（請求），櫃台函式會收到它
-from fastapi.responses import JSONResponse  # JSONResponse（JSON 回應）：自己組出要回傳的 JSON
-from errors import AppError  # 匯入剛剛寫的自訂錯誤類別
+from fastapi import FastAPI  # 不再需要 Request 了
+from errors import register_exception_handlers  # 匯入「登記櫃台」的函式
+
 
 
 from routers import tasks, auth
@@ -8,12 +8,9 @@ from routers import tasks, auth
 
 app = FastAPI()
 # 建立 FastAPI 應用程式；資料表改由 Alembic 管理，所以不再需要 lifespan
-@app.exception_handler(AppError)  # 登記：只要有 AppError 被拋出，就交給下面這個函式處理
-async def app_error_handler(request: Request, exc: AppError):  # request = 這次的請求；exc = 被拋出的那個錯誤
-    return JSONResponse(  # 回傳一個 JSON 回應
-        status_code=exc.status_code,  # 狀態碼用錯誤身上帶的，例如 404
-        content={"error": {"code": exc.code, "message": exc.message}},  # 照新格式組出內容
-    )
+register_exception_handlers(app)  # 把錯誤櫃台接上（跟 include_router 一樣，main.py 只負責組裝）
+
+
 
 
 

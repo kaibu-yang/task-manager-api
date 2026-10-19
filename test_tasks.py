@@ -304,3 +304,16 @@ async def test_not_authenticated_error_format():  # 測試：沒帶手環要用�
         response = await client.get("/tasks")  # 完全不帶 Authorization 標頭
     assert response.status_code == 401  # 401（未授權）
     assert response.json() == {"error": {"code": "NOT_AUTHENTICATED", "message": "請先登入"}}  # 要完全等於新格式
+
+async def test_validation_error_format():  # 測試：422 參數錯誤要用統一格式
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 假使用者
+        response = await client.post("/register", json={})  # 帳號、密碼都不填
+    assert response.status_code == 422  # 422（參數不合格）
+    assert response.json() == {"error": {  # 外層一樣是 error
+        "code": "VALIDATION_ERROR",  # 所有參數錯誤共用這個代碼
+        "message": "請求資料格式錯誤",  # 整體的中文說明
+        "details": [  # 每個出錯的欄位一項
+            {"field": "username", "message": "此欄位為必填"},  # 帳號沒填
+            {"field": "password", "message": "此欄位為必填"},  # 密碼沒填
+        ],
+    }}
