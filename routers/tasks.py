@@ -7,8 +7,6 @@ from fastapi import APIRouter, Depends, Query
 # Depends（依賴）= 讓端點自動取得資料庫連線
 # Query（查詢參數設定工具）：設定網址 ? 後面的參數
 
-from errors import AppError  # 匯入自訂錯誤類別，取代 HTTPException
-
 
 from sqlalchemy.ext.asyncio import AsyncSession
 # AsyncSession（非同步會話）= 跟資料庫對話的工具（非同步版）
@@ -27,6 +25,10 @@ import models
 from schemas import TaskCreate, TaskRead
 # 從 schemas.py 匯入我們剛建立的兩個資料格式
 
+from services import task_service
+# 匯入廚房（業務規則都放在這裡）
+
+
 router = APIRouter()
 # router（路由器）= 用 APIRouter() 建立一個路由器物件
 # 之後所有端點都掛在這個 router 上，而不是掛在 app 上
@@ -36,9 +38,6 @@ class SortField(str, Enum):  # SortField（排序欄位）：繼承 Enum，代�
     title = "title"  # 允許用 title（標題）排序
     done = "done"  # 允許用 done（是否完成）排序
 
-async def get_own_task(db: AsyncSession, task_id: int, user: models.User):  # 取出「編號對、而且主人是這位使用者」的任務
-    result = await db.execute(select(models.Task).where(models.Task.id == task_id, models.Task.user_id == user.id))  # 兩個條件都要成立
-    return result.scalars().first()  # 取第一筆；找不到就是 None，別人的任務也一樣是 None
 
 # Create（建立）：新增一筆任務
 @router.post("/tasks", response_model=TaskRead)
@@ -62,17 +61,13 @@ async def list_tasks(limit: int = Query(20, ge=1, le=100), offset: int = Query(0
 # Read（查單筆）：依 id 查詢
 @router.get("/tasks/{task_id}", response_model=TaskRead)
 async def get_task(task_id: int, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    task = await get_own_task(db, task_id, current_user)
-    if task is None:
-        raise AppError(404, "TASK_NOT_FOUND", "找不到這筆任務")  # 改用自訂錯誤，帶上英文代碼，交給新櫃台處理
+    task = await task_service.get_own_task(db, task_id, current_user)  # 叫廚房拿任務；找不到廚房會直接回 404
     return task
 
 # Update（更新）：改某一筆任務
 @router.put("/tasks/{task_id}", response_model=TaskRead)
 async def update_task(task_id: int, payload: TaskCreate, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    task = await get_own_task(db, task_id, current_user)
-    if task is None:
-        raise AppError(404, "TASK_NOT_FOUND", "找不到這筆任務")  # 改用自訂錯誤，帶上英文代碼，交給新櫃台處理
+    task = await task_service.get_own_task(db, task_id, current_user)  # 叫廚房拿任務；找不到廚房會直接回 404
     task.title = payload.title
     task.description = payload.description
     task.done = payload.done
@@ -83,9 +78,7 @@ async def update_task(task_id: int, payload: TaskCreate, db: AsyncSession = Depe
 # Delete（刪除）：刪掉某一筆任務
 @router.delete("/tasks/{task_id}")
 async def delete_task(task_id: int, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    task = await get_own_task(db, task_id, current_user)
-    if task is None:
-        raise AppError(404, "TASK_NOT_FOUND", "找不到這筆任務")  # 改用自訂錯誤，帶上英文代碼，交給新櫃台處理
+    task = await task_service.get_own_task(db, task_id, current_user)  # 叫廚房拿任務；找不到廚房會直接回 404
     await db.delete(task)
     await db.commit()
     return {"message": f"任務 {task_id} 已刪除"}
