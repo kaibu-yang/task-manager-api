@@ -8,8 +8,6 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 # AsyncSession（非同步會話）= 跟資料庫對話的工具（非同步版）
 
-from sqlalchemy import select
-# select（選取）= 用來查詢資料庫的工具
 
 from database import get_db
 # 從 database.py 匯入 get_db（取得資料庫連線的函式）
@@ -34,11 +32,8 @@ router = APIRouter()
 # Create（建立）：新增一筆任務
 @router.post("/tasks", response_model=TaskRead)
 async def create_task(payload: TaskCreate, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):  # current_user 現在是整個 User
-    task = models.Task(**payload.model_dump(), user_id=current_user.id)  # 請求內容加上主人，主人 id 來自 token
-    db.add(task)
-    await db.commit()
-    await db.refresh(task)
-    return task
+    return await task_service.create_task(db, current_user, payload)  # 叫廚房新增任務
+
 
 # Read（查全部）：列出所有任務
 @router.get("/tasks", response_model=list[TaskRead])  # 網址 GET /tasks；回傳格式是 TaskRead 的清單
