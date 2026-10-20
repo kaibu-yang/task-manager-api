@@ -1,5 +1,3 @@
-from schemas import TaskCreate, TaskRead, SortField
-
 from fastapi import APIRouter, Depends, Query
 # fastapi（API 框架）匯入三個工具：
 # APIRouter（路由器）= 把端點分組管理的工具，等下會解釋
@@ -21,7 +19,7 @@ from routers.auth import get_current_user
 import models
 # 匯入 models.py（資料表定義）
  
-from schemas import TaskCreate, TaskRead
+from schemas import TaskCreate, TaskRead, SortField
 # 從 schemas.py 匯入我們剛建立的兩個資料格式
 
 from services import task_service
