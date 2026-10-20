@@ -7,13 +7,8 @@ from jose import jwt
 # jose（JWT 工具套件）= 處理 JWT 手環的套件
 # jwt（JSON Web Token）= 產生和驗證手環的工具
 
-from passlib.context import CryptContext
-# passlib（密碼工具套件）= 處理密碼加密的套件
-# CryptContext（加密環境）= 設定要用哪種加密方式的工具
-
 from config import settings
 # settings（設定櫃台）= 啟動時已清點好的設定，缺必填值會直接拒絕啟動
-
 
 from fastapi import APIRouter, Depends, status
 
@@ -74,25 +69,6 @@ ALGORITHM = settings.algorithm
 # 找櫃台拿加密演算法（沒設定就用預設的 HS256）
 
 
-# 建立密碼加密工具
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-# pwd_context（密碼環境）= 我們的密碼加密工具
-# schemes=["bcrypt"]（加密方式）= 使用 bcrypt 這種加密演算法
-# deprecated="auto"（自動處理舊的加密方式）= 自動升級舊密碼
-
-# 把明文密碼加密
-def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
-# hash_password（雜湊密碼）= 把原始密碼變成一串看不懂的亂碼
-# 就像把食材放進絞肉機，出來的東西完全看不出原本是什麼
-
-# 確認密碼是否正確
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
-# verify_password（驗證密碼）= 確認使用者輸入的密碼跟資料庫裡的加密密碼是否相符
-# plain_password（明文密碼）= 使用者輸入的原始密碼
-# hashed_password（加密密碼）= 資料庫裡存的加密版本
-
 def create_access_token(data: dict) -> str:
     # data（資料）= 要放進手環裡的資訊，例如使用者帳號
     to_encode = data.copy()
@@ -124,7 +100,7 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
         raise AppError(400, "USERNAME_TAKEN", "帳號已經存在")  # 帳號被用過了
 
     # 把密碼加密後，建立新使用者
-    hashed_pw = hash_password(payload.password)
+    hashed_pw = auth_service.hash_password(payload.password)
     # hash_password（雜湊密碼）= 把明文密碼變成加密版本
     # payload.password（使用者傳來的密碼）= 原始密碼
 
@@ -157,7 +133,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
     # filter（篩選）= 找帳號跟使用者傳進來一樣的
     user = result.scalars().first()
     # scalars().first()= 取出第一筆結果
-    if not user or not verify_password(form_data.password, user.hashed_password):
+    if not user or not auth_service.verify_password(form_data.password, user.hashed_password):
         # not user = 帳號不存在
         # not verify_password(...) = 密碼不正確
         raise AppError(401, "INVALID_CREDENTIALS", "帳號或密碼錯誤")  # credentials（憑證）= 帳號密碼；不說是哪個錯，避免洩漏帳號是否存在
