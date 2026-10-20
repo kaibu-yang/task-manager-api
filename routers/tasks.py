@@ -43,12 +43,8 @@ async def create_task(payload: TaskCreate, db: AsyncSession = Depends(get_db), c
 # Read（查全部）：列出所有任務
 @router.get("/tasks", response_model=list[TaskRead])  # 網址 GET /tasks；回傳格式是 TaskRead 的清單
 async def list_tasks(limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0), done: bool | None = None, sort_by: SortField = SortField.id, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):  # 新增 sort_by：只准 id、title、done，預設 id
-    sort_columns = {SortField.id: models.Task.id, SortField.title: models.Task.title, SortField.done: models.Task.done}  # 對照表：使用者選的字 → 對應的欄位
-    query = select(models.Task).where(models.Task.user_id == current_user.id).order_by(sort_columns[sort_by], models.Task.id).limit(limit).offset(offset)  # 只查自己的，依選的欄位排序，相同時再依 id 決勝負，再切一頁
-    if done is not None:  # 有傳 done 才篩選；沒傳就跳過
-        query = query.where(models.Task.done == done)  # 在原本的查詢上多加一條：done 等於傳進來的值
-    result = await db.execute(query)  # 執行查詢
-    return result.scalars().all()  # 取出這一頁的結果
+    return await task_service.list_tasks(db, current_user, limit, offset, done, sort_by)  # 叫廚房列出這一頁的任務
+
 
 # Read（查單筆）：依 id 查詢
 @router.get("/tasks/{task_id}", response_model=TaskRead)
