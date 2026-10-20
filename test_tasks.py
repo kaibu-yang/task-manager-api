@@ -18,6 +18,11 @@ from main import app
 import models
 # 匯入 models.py（資料表定義）
 
+from datetime import datetime, timedelta, timezone  # 時間工具：用來做一個已經過期的手環
+from jose import jwt  # 產生 JWT 手環的工具
+from config import settings  # 設定櫃台：要用同一把密鑰簽名，手環才會「簽名正確但已過期」
+
+
 # 測試用的資料庫連線網址（用 testdb，不用真實的 taskdb）
 TEST_DATABASE_URL = "postgresql+psycopg://taskuser:taskpass@localhost:5432/testdb"
 # postgresql+psycopg = 用 PostgreSQL 資料庫，透過 psycopg 驅動程式連線
@@ -331,3 +336,13 @@ async def test_method_not_allowed_error_format():  # 測試：方法用錯要用
         response = await client.patch("/tasks")  # /tasks 沒有 PATCH 方法
     assert response.status_code == 405  # 405（方法不允許）
     assert response.json() == {"error": {"code": "METHOD_NOT_ALLOWED", "message": "不支援這個請求方法"}}  # 要完全等於新格式
+
+
+async def test_expired_token_returns_401():  # 測試：過期的手環要回 401，不能變成 500
+    expired_at = datetime.now(timezone.utc) - timedelta(minutes=1)  # 過期時間設在 1 分鐘前
+    token = jwt.encode({"sub": "someone", "exp": expired_at}, settings.secret_key, algorithm=settings.algorithm)  # 簽名正確、但已過期的手環
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:  # 假使用者
+        response = await client.get("/tasks", headers={"Authorization": f"Bearer {token}"})  # 帶著過期手環去查任務
+    assert response.status_code == 401  # 401（未授權）
+    assert response.json() == {"error": {"code": "INVALID_TOKEN", "message": "無效的手環"}}  # 跟其他無效手環同一個格式
+

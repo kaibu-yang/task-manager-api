@@ -1,10 +1,3 @@
-from jose import jwt
-# jose（JWT 工具套件）= 處理 JWT 手環的套件
-# jwt（JSON Web Token）= 產生和驗證手環的工具
-
-from config import settings
-# settings（設定櫃台）= 啟動時已清點好的設定，缺必填值會直接拒絕啟動
-
 from fastapi import APIRouter, Depends
 
 from errors import AppError  # 匯入自訂錯誤類別，取代 HTTPException
@@ -40,26 +33,14 @@ async def get_current_user(token: str | None = Depends(oauth2_scheme), db: Async
     if token is None:  # 沒帶手環（驗票員不再自己報錯，改由這裡處理）
         raise AppError(401, "NOT_AUTHENTICATED", "請先登入")  # 跟「手環無效」分開，前端才知道是要登入，還是要重新登入
 
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        # jwt.decode（解碼）= 把 JWT 手環解開，取出裡面的資料
-        username = payload.get("sub")
-        # payload.get("sub")= 取出手環裡存的使用者帳號
-        if username is None:
-            raise AppError(401, "INVALID_TOKEN", "無效的手環")  # 手環無效：解不開、沒有帳號、或帳號已不存在)
-    except Exception:
-        raise AppError(401, "INVALID_TOKEN", "無效的手環")  # 手環無效：解不開、沒有帳號、或帳號已不存在
+    username = auth_service.decode_access_token(token)  # 叫廚房解開手環，取出帳號
+    if username is None:  # 解不開、過期、或手環裡沒有帳號
+        raise AppError(401, "INVALID_TOKEN", "無效的手環")  # 一律回無效的手環
     user = await auth_service.get_user_by_username(db, username)  # 叫廚房用帳號找使用者；找不到是 None
+
     if user is None:  # token 有效，但這個帳號已經不在 users 表（例如被刪除）
         raise AppError(401, "INVALID_TOKEN", "無效的手環")  # 手環無效：解不開、沒有帳號、或帳號已不存在、一樣回 401
     return user  # 回傳整個使用者物件，之後路由可以用 user.id
-
-
-SECRET_KEY = settings.secret_key
-# 找櫃台拿 JWT 簽名密鑰（必填，保證有值）
-
-ALGORITHM = settings.algorithm
-# 找櫃台拿加密演算法（沒設定就用預設的 HS256）
 
 
 # 註冊新使用者

@@ -9,7 +9,8 @@ from errors import AppError  # 自訂錯誤類別
 from schemas import UserCreate  # 註冊用的資料格式
 
 from datetime import datetime, timedelta, timezone  # 時間工具：現在時間、時間差、時區
-from jose import jwt  # 產生 JWT 手環的工具
+from jose import JWTError, jwt  # jwt = 產生／解開手環的工具；JWTError = 手環有問題時的專用錯誤
+
 from config import settings  # 設定櫃台（密鑰、演算法）
 
 
@@ -53,5 +54,11 @@ def create_access_token(username: str) -> str:  # 幫這位使用者簽發 JWT �
     return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)  # 用密鑰簽名，產生手環字串
 
 
+def decode_access_token(token: str) -> str | None:  # 解開手環、取出帳號；手環無效就回傳 None
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])  # 用密鑰檢查簽名，也會檢查是否過期
+    except JWTError:  # 只抓「手環本身有問題」：簽名錯、過期、格式壞掉
+        return None  # 手環無效
+    return payload.get("sub")  # 取出帳號；手環裡沒有 sub 也會得到 None
 
 
