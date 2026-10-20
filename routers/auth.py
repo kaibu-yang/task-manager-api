@@ -1,8 +1,3 @@
-from datetime import datetime, timedelta, timezone
-# datetime（日期時間）= Python 內建的時間工具
-# timedelta（時間差）= 用來計算「幾分鐘後過期」的工具
-# timezone（時區），用來標明 UTC
-
 from jose import jwt
 # jose（JWT 工具套件）= 處理 JWT 手環的套件
 # jwt（JSON Web Token）= 產生和驗證手環的工具
@@ -23,8 +18,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
 # 從 database.py 匯入 get_db（取得資料庫連線的函式）
 
-import models
-# 匯入 models.py（資料表定義）
 
 from schemas import UserCreate, Token
 # 從 schemas.py 匯入使用者相關的資料格式
@@ -69,27 +62,11 @@ ALGORITHM = settings.algorithm
 # 找櫃台拿加密演算法（沒設定就用預設的 HS256）
 
 
-def create_access_token(data: dict) -> str:
-    # data（資料）= 要放進手環裡的資訊，例如使用者帳號
-    to_encode = data.copy()
-    # copy()（複製）= 複製一份資料，避免修改到原本的
-    expire = datetime.now(timezone.utc) + timedelta(minutes=30)
-    # 取得「標明是 UTC」的現在時間，再加 30 分鐘
-    # datetime.now(timezone.utc)（現在的 UTC 時間）= 取得標明時區的目前時間
-    # timedelta(minutes=30)（30分鐘後）= 手環 30 分鐘後過期
-    to_encode.update({"exp": expire})
-    # update（更新）= 把過期時間加進去
-    # "exp"（expiration，過期時間）= JWT 規定的過期時間欄位名稱
-    token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    # jwt.encode（編碼）= 把資料加密成 JWT 手環字串
-    return token
-    # 回傳產生好的 JWT 手環字串
-
 # 註冊新使用者
 @router.post("/register", response_model=Token)
 async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
     new_user = await auth_service.register_user(db, payload)  # 叫廚房註冊：檢查重複、加密密碼、存檔
-    token = create_access_token({"sub": new_user.username})  # 產生 JWT 手環，"sub" 放使用者帳號
+    token = auth_service.create_access_token(new_user.username)  # 產生 JWT 手環，"sub" 放使用者帳號
     return Token(access_token=token, token_type="bearer")  # 把手環交給客人
 
  
@@ -97,6 +74,6 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
 @router.post("/login", response_model=Token)
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
     user = await auth_service.authenticate_user(db, form_data.username, form_data.password)  # 叫廚房檢查帳密；錯了廚房會直接回 401
-    token = create_access_token({"sub": user.username})  # 產生 JWT 手環
+    token = auth_service.create_access_token(user.username)   # 產生 JWT 手環
     return Token(access_token=token, token_type="bearer")  # 把手環交給客人
 

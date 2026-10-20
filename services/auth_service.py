@@ -8,6 +8,11 @@ from passlib.context import CryptContext  # 密碼加密工具
 from errors import AppError  # 自訂錯誤類別
 from schemas import UserCreate  # 註冊用的資料格式
 
+from datetime import datetime, timedelta, timezone  # 時間工具：現在時間、時間差、時區
+from jose import jwt  # 產生 JWT 手環的工具
+from config import settings  # 設定櫃台（密鑰、演算法）
+
+
 
 async def get_user_by_username(db: AsyncSession, username: str) -> models.User | None:  # 用帳號找使用者
     result = await db.execute(select(models.User).where(models.User.username == username))  # 找帳號一樣的那一筆
@@ -38,6 +43,15 @@ async def authenticate_user(db: AsyncSession, username: str, password: str) -> m
     if user is None or not verify_password(password, user.hashed_password):  # 帳號不存在，或密碼不對
         raise AppError(401, "INVALID_CREDENTIALS", "帳號或密碼錯誤")  # 規則：不說是哪一個錯，避免洩漏帳號是否存在
     return user  # 帳密都正確，回傳使用者
+
+
+ACCESS_TOKEN_EXPIRE_MINUTES = 30  # 手環有效時間（分鐘）
+
+def create_access_token(username: str) -> str:  # 幫這位使用者簽發 JWT 手環
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)  # 過期時間 = 現在（UTC）+ 30 分鐘
+    to_encode = {"sub": username, "exp": expire}  # sub = 使用者帳號、exp = 過期時間（JWT 規定的欄位名）
+    return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)  # 用密鑰簽名，產生手環字串
+
 
 
 
