@@ -35,3 +35,20 @@ async def create_task(db: AsyncSession, user: models.User, data: TaskCreate) -> 
     return task  # 回傳新建好的任務
 
 
+async def update_task(db: AsyncSession, task_id: int, user: models.User, data: TaskCreate) -> models.Task:  # 更新這位使用者的某筆任務
+    task = await get_own_task(db, task_id, user)  # 先確認是自己的任務；不是就直接 404
+    task.title = data.title  # 換成新的標題
+    task.description = data.description  # 換成新的描述
+    task.done = data.done  # 換成新的完成狀態
+    await db.commit()  # 寫進資料庫
+    await db.refresh(task)  # 重新讀回來，拿到更新後的時間戳記
+    return task  # 回傳更新後的任務
+
+
+async def delete_task(db: AsyncSession, task_id: int, user: models.User) -> None:  # 刪除這位使用者的某筆任務
+    task = await get_own_task(db, task_id, user)  # 先確認是自己的任務；不是就直接 404
+    await db.delete(task)  # 標記要刪除
+    await db.commit()  # 真正從資料庫刪掉
+
+
+

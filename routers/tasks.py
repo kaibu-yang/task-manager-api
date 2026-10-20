@@ -50,18 +50,11 @@ async def get_task(task_id: int, db: AsyncSession = Depends(get_db), current_use
 # Update（更新）：改某一筆任務
 @router.put("/tasks/{task_id}", response_model=TaskRead)
 async def update_task(task_id: int, payload: TaskCreate, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    task = await task_service.get_own_task(db, task_id, current_user)  # 叫廚房拿任務；找不到廚房會直接回 404
-    task.title = payload.title
-    task.description = payload.description
-    task.done = payload.done
-    await db.commit()
-    await db.refresh(task)
-    return task
+    return await task_service.update_task(db, task_id, current_user, payload)  # 叫廚房更新任務
+
 
 # Delete（刪除）：刪掉某一筆任務
 @router.delete("/tasks/{task_id}")
 async def delete_task(task_id: int, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    task = await task_service.get_own_task(db, task_id, current_user)  # 叫廚房拿任務；找不到廚房會直接回 404
-    await db.delete(task)
-    await db.commit()
-    return {"message": f"任務 {task_id} 已刪除"}
+    await task_service.delete_task(db, task_id, current_user)  # 叫廚房刪除任務
+    return {"message": f"任務 {task_id} 已刪除"}  # 回給客人的訊息由服務生決定
