@@ -5,7 +5,7 @@ from jose import jwt
 from config import settings
 # settings（設定櫃台）= 啟動時已清點好的設定，缺必填值會直接拒絕啟動
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends
 
 from errors import AppError  # 匯入自訂錯誤類別，取代 HTTPException
 
@@ -66,7 +66,7 @@ ALGORITHM = settings.algorithm
 @router.post("/register", response_model=Token)
 async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
     new_user = await auth_service.register_user(db, payload)  # 叫廚房註冊：檢查重複、加密密碼、存檔
-    token = auth_service.create_access_token(new_user.username)  # 產生 JWT 手環，"sub" 放使用者帳號
+    token = auth_service.create_access_token(new_user.username)  # 叫廚房簽發 JWT 手環
     return Token(access_token=token, token_type="bearer")  # 把手環交給客人
 
  
@@ -74,6 +74,6 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
 @router.post("/login", response_model=Token)
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
     user = await auth_service.authenticate_user(db, form_data.username, form_data.password)  # 叫廚房檢查帳密；錯了廚房會直接回 401
-    token = auth_service.create_access_token(user.username)   # 產生 JWT 手環
+    token = auth_service.create_access_token(user.username)   # 叫廚房簽發 JWT 手環
     return Token(access_token=token, token_type="bearer")  # 把手環交給客人
 
