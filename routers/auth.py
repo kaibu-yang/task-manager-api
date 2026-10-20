@@ -34,6 +34,10 @@ import models
 from schemas import UserCreate, Token
 # 從 schemas.py 匯入使用者相關的資料格式
 
+from services import auth_service
+# 匯入 auth 的廚房（使用者相關的業務規則）
+
+
 router = APIRouter()
 # router（路由器）= 建立一個路由器物件，端點都掛在這上面
 
@@ -57,9 +61,7 @@ async def get_current_user(token: str | None = Depends(oauth2_scheme), db: Async
             raise AppError(401, "INVALID_TOKEN", "無效的手環")  # 手環無效：解不開、沒有帳號、或帳號已不存在)
     except Exception:
         raise AppError(401, "INVALID_TOKEN", "無效的手環")  # 手環無效：解不開、沒有帳號、或帳號已不存在
-    from sqlalchemy import select  # 現在和 result 對齊，只有 try 成功時才會走到這裡
-    result = await db.execute(select(models.User).filter(models.User.username == username))
-    user = result.scalars().first()  # 取出第一筆；找不到就是 None
+    user = await auth_service.get_user_by_username(db, username)  # 叫廚房用帳號找使用者；找不到是 None
     if user is None:  # token 有效，但這個帳號已經不在 users 表（例如被刪除）
         raise AppError(401, "INVALID_TOKEN", "無效的手環")  # 手環無效：解不開、沒有帳號、或帳號已不存在、一樣回 401
     return user  # 回傳整個使用者物件，之後路由可以用 user.id
