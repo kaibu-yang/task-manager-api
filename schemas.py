@@ -1,3 +1,6 @@
+from enum import Enum
+# Enum（列舉）：把允許的選項先一個個列出來的清單型別
+
 from pydantic import BaseModel
 # 從 pydantic（資料驗證工具）匯入 BaseModel（基礎模型）
 
@@ -27,3 +30,9 @@ class Token(BaseModel):
     access_token: str     # 手環的字串內容
     token_type: str       # 手環的類型，固定是 "bearer"
     # bearer（持有者）= 表示「持有這個手環的人」的意思
+
+
+class SortField(str, Enum):  # SortField（排序欄位）：繼承 Enum，代表一張限定選項的清單
+    id = "id"  # 允許用 id 排序，等號右邊是網址要傳的字
+    title = "title"  # 允許用 title（標題）排序
+    done = "done"  # 允許用 done（是否完成）排序
