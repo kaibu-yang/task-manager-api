@@ -33,3 +33,11 @@ async def register_user(db: AsyncSession, data: UserCreate) -> models.User:  # �
     return user  # 回傳新使用者
 
 
+async def authenticate_user(db: AsyncSession, username: str, password: str) -> models.User:  # 檢查帳號密碼，正確就回傳使用者
+    user = await get_user_by_username(db, username)  # 先用帳號找人
+    if user is None or not verify_password(password, user.hashed_password):  # 帳號不存在，或密碼不對
+        raise AppError(401, "INVALID_CREDENTIALS", "帳號或密碼錯誤")  # 規則：不說是哪一個錯，避免洩漏帳號是否存在
+    return user  # 帳密都正確，回傳使用者
+
+
+

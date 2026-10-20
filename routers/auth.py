@@ -96,19 +96,7 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
 #登入
 @router.post("/login", response_model=Token)
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
-    # payload（資料）= 使用者傳進來的帳號和密碼
-    from sqlalchemy import select
-    result = await db.execute(select(models.User).filter(models.User.username == form_data.username))
-    # select（選取）= 查詢資料庫
-    # filter（篩選）= 找帳號跟使用者傳進來一樣的
-    user = result.scalars().first()
-    # scalars().first()= 取出第一筆結果
-    if not user or not auth_service.verify_password(form_data.password, user.hashed_password):
-        # not user = 帳號不存在
-        # not verify_password(...) = 密碼不正確
-        raise AppError(401, "INVALID_CREDENTIALS", "帳號或密碼錯誤")  # credentials（憑證）= 帳號密碼；不說是哪個錯，避免洩漏帳號是否存在
-    token = create_access_token({"sub": user.username})
-    # create_access_token（產生手環）= 產生 JWT 手環
-    # "sub"（subject，主體）= JWT 規定的欄位，存放使用者帳號
-    return Token(access_token=token, token_type="bearer")
-    # Token（手環格式）= 回傳手環字串和類型
+    user = await auth_service.authenticate_user(db, form_data.username, form_data.password)  # 叫廚房檢查帳密；錯了廚房會直接回 401
+    token = create_access_token({"sub": user.username})  # 產生 JWT 手環
+    return Token(access_token=token, token_type="bearer")  # 把手環交給客人
+
