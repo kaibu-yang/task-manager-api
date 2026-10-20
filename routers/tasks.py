@@ -1,5 +1,4 @@
-from enum import Enum 
-# Enum（列舉）：把允許的選項先一個個列出來的清單型別
+from schemas import TaskCreate, TaskRead, SortField
 
 from fastapi import APIRouter, Depends, Query
 # fastapi（API 框架）匯入三個工具：
@@ -32,11 +31,6 @@ from services import task_service
 router = APIRouter()
 # router（路由器）= 用 APIRouter() 建立一個路由器物件
 # 之後所有端點都掛在這個 router 上，而不是掛在 app 上
-
-class SortField(str, Enum):  # SortField（排序欄位）：繼承 Enum，代表一張限定選項的清單
-    id = "id"  # 允許用 id 排序，等號右邊是網址要傳的字
-    title = "title"  # 允許用 title（標題）排序
-    done = "done"  # 允許用 done（是否完成）排序
 
 
 # Create（建立）：新增一筆任務
