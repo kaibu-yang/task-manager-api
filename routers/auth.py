@@ -88,40 +88,10 @@ def create_access_token(data: dict) -> str:
 # 註冊新使用者
 @router.post("/register", response_model=Token)
 async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
-    # payload（資料）= 使用者傳進來的帳號和密碼
-    # 先檢查帳號是不是已經有人用了
-    from sqlalchemy import select
-    result = await db.execute(select(models.User).filter(models.User.username == payload.username))
-    # select（選取）= 查詢資料庫
-    # filter（篩選）= 找帳號跟使用者傳進來一樣的
-    existing_user = result.scalars().first()
-    # scalars().first()= 取出第一筆結果
-    if existing_user:
-        raise AppError(400, "USERNAME_TAKEN", "帳號已經存在")  # 帳號被用過了
+    new_user = await auth_service.register_user(db, payload)  # 叫廚房註冊：檢查重複、加密密碼、存檔
+    token = create_access_token({"sub": new_user.username})  # 產生 JWT 手環，"sub" 放使用者帳號
+    return Token(access_token=token, token_type="bearer")  # 把手環交給客人
 
-    # 把密碼加密後，建立新使用者
-    hashed_pw = auth_service.hash_password(payload.password)
-    # hash_password（雜湊密碼）= 把明文密碼變成加密版本
-    # payload.password（使用者傳來的密碼）= 原始密碼
-
-    new_user = models.User(
-        username=payload.username,
-        # username（使用者名稱）= 帳號
-        hashed_password=hashed_pw
-        # hashed_password（加密後的密碼）= 存加密版本，不存明文
-    )
-    db.add(new_user)
-    # db.add（加入）= 把新使用者加入資料庫連線
-    await db.commit()
-    # await db.commit()（等待存檔）= 真正寫進資料庫
-    await db.refresh(new_user)
-    # await db.refresh（等待重新讀取）= 讀回最新狀態
-
-    # 產生 JWT 手環並回傳
-    token = create_access_token({"sub": new_user.username})
-    # "sub"（subject，主體）= JWT 規定的欄位，存放使用者帳號
-    return Token(access_token=token, token_type="bearer")
-    # Token（手環格式）= 回傳手環字串和類型
  
 #登入
 @router.post("/login", response_model=Token)
