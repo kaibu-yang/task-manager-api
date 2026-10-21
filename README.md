@@ -1,209 +1,414 @@
 # Task Manager API
 
-一個用 FastAPI 和 PostgreSQL 做的任務管理 API。使用者註冊登入後，只能管理**自己的**任務。
+用 FastAPI + PostgreSQL 寫的任務管理 API。註冊登入後，每個人只看得到、改得到自己的任務。
 
-## 為什麼做這個專案
+這是我練後端用的基礎框架。題目故意選最簡單的任務管理，重點放在做什麼主題都會用到的東西：資料隔離、資料庫遷移、測試、CI、錯誤處理、設定管理、分層。之後要換主題，換掉資料表和業務規則就好。
 
-我想重新把後端學起來，目標是後端與軟體工程的工作。
+每個設計為什麼這樣做、怎麼確認沒做錯，都寫在[設計決策](#設計決策)裡。
 
-我選擇「邊做專案邊學」，而不是先把教學看完。所以這個專案不是一次寫好的，是一步一步長出來的：先能跑，再補測試，再補資料庫遷移，再補自動檢查，最後才處理安全問題。每一步我都會留下當時為什麼這樣做的原因，這份 README 就是那些原因的整理。
+## 目錄
 
-## 我最在意的三件事
+- [技術棧](#技術棧)
+- [系統架構](#系統架構)
+- [主要流程](#主要流程)
+- [設計決策](#設計決策)
+  - [1. 資料隔離 — 只能碰自己的任務](#1-資料隔離--只能碰自己的任務)
+  - [2. 三步遷移 — 先放寬，再收緊](#2-三步遷移--先放寬再收緊)
+  - [3. 外鍵命名 — 讓降級跑得動](#3-外鍵命名--讓降級跑得動)
+  - [4. 啟動時自動遷移 — 遷移成功才開門](#4-啟動時自動遷移--遷移成功才開門)
+  - [5. CI 和 Docker — 各在乾淨環境測一次](#5-ci-和-docker--各在乾淨環境測一次)
+  - [6. 統一錯誤格式 — code 給程式，message 給人](#6-統一錯誤格式--code-給程式message-給人)
+  - [7. 集中設定 — 缺設定就不啟動](#7-集中設定--缺設定就不啟動)
+  - [8. 分層 — router 管 HTTP，service 管規則](#8-分層--router-管-httpservice-管規則)
+  - [9. JWT 錯誤處理 — 只抓 JWTError](#9-jwt-錯誤處理--只抓-jwterror)
+- [資料模型](#資料模型)
+- [API 端點](#api-端點)
+- [目錄結構](#目錄結構)
+- [本地開發](#本地開發)
+- [測試與 CI](#測試與-ci)
+- [實測：索引效能](#實測索引效能)
+- [目前的限制](#目前的限制)
+- [接下來](#接下來)
 
-1. **別人的資料，我的 API 不能讓你碰到。** 多人共用的系統，最危險的不是功能壞掉，而是 A 看到或改到 B 的資料。
-2. **資料庫結構要能安全地改。** 專案已經有資料之後，改結構不能靠手動，也不能改壞。
-3. **「在我的電腦上可以跑」不算數。** 我要在全新的環境驗證一次，別人拿到專案才跑得起來。
+## 技術棧
 
-## 技術選擇
-
-| 技術 | 我為什麼用它 |
+| 層 | 技術 |
 |---|---|
-| FastAPI | 支援非同步，等資料庫回應時能先處理別的請求；而且會自動產生 `/docs` 說明書，我可以直接用它測試 API |
-| PostgreSQL + SQLAlchemy（async） | 關聯式資料庫可以用外鍵保證「任務一定屬於某個存在的使用者」；SQLAlchemy 讓我用 Python 物件操作資料表，但我也會對照它產生的 SQL |
-| Alembic | 把資料庫結構的每次改動寫成有順序的「遷移」，可以從空資料庫重建，也可以降級 |
-| JWT + bcrypt | JWT 讓伺服器不需要記住誰登入；bcrypt 讓資料庫萬一外洩，也看不到明文密碼 |
-| Docker Compose | 一行指令啟動 API 和資料庫，啟動時自動遷移 |
-| pytest + GitHub Actions | 測試保護功能；GitHub Actions 在全新機器上自動跑一次，不靠我的電腦 |
+| Web 框架 | FastAPI + Uvicorn，全程 async |
+| 語言 | Python 3.11（Docker、CI） |
+| 資料庫 | PostgreSQL 15 + SQLAlchemy 2.0（async）+ psycopg 3 |
+| 遷移 | Alembic（不用 `create_all`，所有結構變更都走遷移） |
+| 認證 | JWT（python-jose，HS256，30 分鐘過期）+ bcrypt（passlib） |
+| 設定 | pydantic-settings（啟動時檢查必要設定） |
+| 測試 | pytest + pytest-asyncio + httpx |
+| 容器 | Docker + Docker Compose，啟動時自動跑遷移 |
+| CI | GitHub Actions：遷移 → `alembic check` → pytest |
 
+## 系統架構
 
+兩個容器：`api` 和 `db`。
+
+### 一個請求怎麼走
+
+```
+ client
+   │  POST /tasks   Authorization: Bearer <token>
+   ▼
+┌─ api   uvicorn app.main:app   :8000 ───────────────────────────────────┐
+│  1. auth      get_current_user          no / bad token  ──▶ 401        │
+│  2. validate  schemas.TaskCreate        bad input       ──▶ 422        │
+│  3. router    routers/tasks.py                                         │
+│  4. service   services/task_service.py  not yours       ──▶ 404        │
+│  5. response  schemas.TaskRead                                         │
+│                                                                        │
+│  any error ──▶ errors.py ──▶ {"error": {"code", "message"}}            │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │  SQLAlchemy (async)
+                                    ▼
+┌─ db   PostgreSQL 15 ───────────────────────────────────────────────────┐
+│  users  id | username (UNIQUE) | hashed_password                       │
+│    │ 1 : N                                                             │
+│  tasks  id | title | description | done | user_id (FK, INDEX)          │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+1. **驗身分**：沒帶 token、token 壞了或過期、帳號不在了，都回 401
+2. **檢查參數**：格式不對回 422。身分先驗，所以沒登入又亂送資料，回的是 401
+3. **router**：只負責收和回，不碰資料庫
+4. **service**：任務主人一律用 token 裡的人；不是你的任務回 404
+5. **回傳**：只送 `TaskRead` 裡有的欄位，`user_id` 不會送出去
+
+不管哪一步出錯，都由 `errors.py` 轉成同一個格式。
+
+### 容器怎麼啟動
+
+```
+docker compose up
+┌─ db ───────────────────────────────────────────────────────┐
+│  pg_isready every 5s  ──▶  healthy                         │
+└─────────┬──────────────────────────────────────────────────┘
+          ▼
+┌─ api ──────────────────────────────────────────────────────┐
+│  config.Settings()       missing setting  ──▶ exit         │
+│  alembic upgrade head    fails            ──▶ exit         │
+│  exec uvicorn app.main:app                                 │
+└────────────────────────────────────────────────────────────┘
+```
+
+資料庫準備好才啟動 api。設定缺了或遷移失敗，api 都不會開。
+
+### CI 怎麼驗
+
+```
+PR / push to main
+   ▼
+┌─ GitHub Actions   empty postgres:15 ───────────────────────┐
+│  alembic upgrade head  ──▶  alembic check  ──▶  pytest     │
+└────────────────────────────────────────────────────────────┘
+```
+
+每個 PR 都在全新的資料庫上跑一遍，有一步失敗就不合併。
+
+## 主要流程
+
+一個使用者從註冊到管理任務，系統實際走的路：
+
+1. **註冊**：`POST /register`。檢查帳號沒人用，密碼用 bcrypt 雜湊後才存，回傳 token。
+2. **登入**：`POST /login`。帳號不存在或密碼錯，都回同一個錯誤，不讓人猜帳號存不存在。
+3. **帶 token 操作任務**：每個 `/tasks` 請求先過 `get_current_user`：沒帶 token 回 `NOT_AUTHENTICATED`，解不開或過期回 `INVALID_TOKEN`。
+4. **新增任務**：任務的主人一律從 token 拿，不看請求內容。
+5. **查詢、修改、刪除**：查詢條件同時比對任務編號和主人，不是你的就跟不存在一樣，回 404。
+6. **出錯時**：不管哪一層出錯，回應都是 `{"error": {"code", "message"}}`。
 
 ## 設計決策
 
-每個設計我都用同一個格式寫：遇到什麼問題、怎麼做、為什麼不用別的做法、怎麼證明它有用。
+每個決策都照同一個順序寫：遇到什麼問題、怎麼做、怎麼確認。
 
-### 1. 資料隔離：只能存取自己的任務
+### 1. 資料隔離 — 只能碰自己的任務
 
-**問題**：一開始 tasks 只有編號，沒有記錄「這是誰的」。這代表登入的人只要把網址裡的編號改掉，就能讀、改、刪別人的任務。這種漏洞叫 IDOR（不安全的直接物件參照）。我是在補完功能之後，自己檢查才發現的。
-
-**做法**：
-- tasks 加上 `user_id` 外鍵，記錄主人
-- `user_id` **只從 JWT 取得**，不接受客戶端傳入。如果讓使用者自己傳，他就能假裝是別人
-- 單筆查詢、修改、刪除全部走同一個函式 `get_own_task`，查詢條件同時要求「編號對」和「主人是登入者」
-
-**為什麼不用別的做法**：
-- 不在查出資料後才比對。那樣別人的資料已經進到程式裡，一旦漏寫比對就出事。我選擇在查詢條件就過濾，別人的資料根本不會被撈出來。
-- 查不到時回 404，不回 403。回 403 等於告訴對方「這個編號存在，只是你不能看」；回 404 讓對方分不出「不存在」和「不是你的」。
-- 不在每個端點各寫一份。集中在一個函式，之後新增端點也不容易漏掉。
-
-**怎麼驗證**：我先寫測試，再修漏洞。用兩個帳號，A 建立任務，B 用編號去讀、改、刪，預期 404。修之前測試失敗（`assert 200 == 404`），證實漏洞真的存在；修完同一個測試通過，全部測試 9 passed。
-
-### 2. 先擴大再收緊：三步遷移
-
-**問題**：我想讓 `tasks.user_id` 必填，但資料庫裡已經有舊任務，它們沒有 `user_id`。直接設必填，遷移會失敗。
-
-**做法**：拆成三步，每一步獨立驗證：
-1. 加上**可以空白**的 `user_id`，並把舊任務補上主人
-2. 讓程式碼開始填 `user_id`（建立任務、查詢、修補漏洞）
-3. 確認沒有空值後，才改成**必填**
-
-**為什麼不用別的做法**：一次做完，舊資料會讓遷移失敗，而且中間沒有退路。拆開之後，每一步出問題都能單獨回復。
-
-**怎麼驗證**：
-- 改必填之前，先查空值筆數是 0
-- 先在演習用的資料庫走一遍升級、降級、再升級，筆數不變，才對開發資料庫執行
-- 用 `alembic check` 確認模型和資料庫沒有差異
-
-### 3. 外鍵要取名字
-
-**問題**：外鍵如果沒取名字，Alembic 自動產生的降級會失敗（會出現 UserWarning）。
-
-**做法**：明確取名 `fk_tasks_user_id_users`。
-
-**我學到的**：自動產生的遷移只是草稿，一定要自己讀過、實際跑過降級，才知道退路能不能走。
-
-### 4. 容器啟動時自動遷移
-
-**問題**：別人拿到專案，不該還要先手動跑遷移指令。另外我發現容器關閉要等 10.4 秒。
-
-**做法**：啟動指令是 `alembic upgrade head && exec uvicorn`。
-- `&&`：遷移成功才啟動 API，避免 API 連到結構不對的資料庫
-- `exec`：讓 uvicorn 取代外殼成為主程序，才能直接收到停止訊號，關閉時間從 10.4 秒降到 0.8 秒
-
-**怎麼驗證**：`docker compose down -v` 清空所有資料後，`up --build` 重新啟動。日誌依序出現三次 `Running upgrade`，再進容器確認 `user_id` 是 `not null`、版本是最新的。
-
-**目前限制**：我只有一個 `api` 容器。如果同時開多個，可能同時跑遷移而互相衝突。我知道這件事，但現在不需要處理。
-
-### 5. CI 和 Docker，各驗證一次
-
-**問題**：本機有舊資料、已經裝好的套件，結果可能碰巧是對的。而且 CI 不讀 Dockerfile，Docker 也不跑測試，兩邊各自有可能壞。
+**問題**：一開始任務沒記錄是誰的，改網址裡的編號就能讀改刪別人的任務（IDOR）。這是我功能做完後自己檢查發現的。
 
 **做法**：
-- **CI**（`.github/workflows/test.yml`）：每次 PR，在全新機器和空的 PostgreSQL 上，依序執行 `alembic upgrade head`、`alembic check`、`pytest`
-- **Docker**：全新環境啟動，驗證啟動指令與自動遷移
+- 任務加上 `user_id`，而且**只從 token 拿**，不讓使用者自己傳
+- 查一筆、改、刪都走同一個 `get_own_task`，查詢時就同時比對編號和主人
+- 不是你的就回 404，不回 403。回 403 等於告訴對方「這筆存在」
 
+**驗證**：先寫測試，A 建任務、B 去讀改刪。修之前測試失敗（`assert 200 == 404`），確定漏洞是真的；修完通過。
 
-## 我犯過的BUG
+### 2. 三步遷移 — 先放寬，再收緊
 
-這些是真的發生過的事，我把它們留下來，因為我從中學到的比成功的部分還多。
+**問題**：想把 `user_id` 改成必填，但舊任務都沒有值，直接改會失敗。
 
-- **專案裡藏了一個重複的內層專案，還有巢狀的 Git 儲存庫。** 我後來把它移除（PR #1），並備份舊的內層專案。
-- **測試其實壞了很久，我沒發現。** 我用 `git stash`（把目前的改動暫時收起來）回到乾淨狀態對照，才確認是舊問題，不是我剛改的。修好測試放在 PR #2。
-- **專案已經在跑，才導入 Alembic。** 資料庫裡已經有表，不能直接從頭建，所以我先做一個 baseline（起點），再用 `stamp`（告訴 Alembic「這個資料庫已經是這個版本」）登記。
-- **Docker 的舊資料卷造成 `DuplicateTable`（表已存在）。** 舊資料留著，新的遷移又想再建一次。這讓我明白驗證遷移時，一定要用 `down -v` 從空資料庫開始。
-- **CI 上線前，我用全新的虛擬環境彩排，發現 `requirements.txt` 漏列了 `pytest-asyncio`。** 在我的電腦上一切正常，只是因為我早就裝過了。
-- **容器關閉要等 10.4 秒。** 原因是啟動指令沒加 `exec`，加了之後降到 0.8 秒。
+**做法**：
+1. 先加可以空的 `user_id`，把舊任務補上主人
+2. 程式開始寫入 `user_id`
+3. 確認沒有空值，才改成必填
 
-## 索引與查詢效能（實測）
+一次做完的話，失敗了沒有退路。拆開來每一步都能單獨退回。
 
-環境：本機 WSL2、PostgreSQL 18，`tasks` 表約 10 萬筆（10 位使用者各 1 萬筆，另有 1 位只有 3 筆）。用 `EXPLAIN ANALYZE` 量，每列註明量了幾次；量 3 次的取中位數（排序後最中間的那個數字），只量 1 次的會標明。
+**驗證**：改必填前先查空值是 0；在演習資料庫跑過升級、降級、再升級，筆數不變；`alembic check` 確認模型和資料庫一致。
 
-| 查詢 `WHERE user_id = 1 ORDER BY id LIMIT 20`（只有 3 筆資料的使用者） | 路線 | 讀取資料頁 | 執行時間（中位數） |
-|---|---|---|---|
-| 加 `user_id` 索引前 | Seq Scan（整張表掃一遍，看了 10 萬列、丟掉 10 萬列） | 934 | 58.96 ms |
-| 加 `user_id` 索引後 | Bitmap Index Scan（先翻目錄，再只讀有符合的頁） | 3 | 0.17 ms |
+### 3. 外鍵命名 — 讓降級跑得動
 
-| 查詢 `WHERE user_id = 5 ORDER BY id LIMIT 20`（有 1 萬筆資料的使用者） | 路線 | 讀取資料頁 | 執行時間 |
-|---|---|---|---|
-| 加 `user_id` 索引前 | Index Scan using `ix_tasks_id`（沿著 id 目錄走，邊走邊檢查，湊滿 20 筆就停） | 4 | 0.22 ms（3 次的中位數） |
-| 加 `user_id` 索引後 | 路線沒變，規劃器沒有改用新索引 | 4 | 0.14 ms（只量 1 次） |
-| 再拿掉重複的 `id` 索引後 | Index Scan using `tasks_pkey`（內容相同的主鍵目錄） | 4 | 0.08 ms（只量 1 次，暖機後） |
+沒取名的外鍵，Alembic 自動產生的降級會失敗。所以我明確取名 `fk_tasks_user_id_users`。
 
-**這組數字能說明的**：對資料很少的使用者，加 `user_id` 索引讓讀取資料頁從 934 降到 3，因為不用再掃整張表。對資料多的使用者沒有改善，因為沿著 `id` 目錄走，看 196 筆就湊滿 20 筆，規劃器沒有用新索引。
+學到的：自動產生的遷移只是草稿，要自己讀過、實際降級一次才算數。
 
-**這組數字不能說明的**：
-- 資料是我用 SQL 灌的，10 位使用者剛好各 1 萬筆，真實系統的分布不會這麼整齊。
-- 只量了讀取，沒量寫入。每多一個索引，新增資料就多維護一份，這個成本我還沒量。
-- 加索引前 `user_id = 1` 三次量到 7.6、64.1、59.0 ms，差距很大，所以我以讀取資料頁為主要證據，毫秒只當參考。
+### 4. 啟動時自動遷移 — 遷移成功才開門
 
-## 篩選與排序的實測（`done` 篩選、`sort_by`）
+啟動指令是 `alembic upgrade head && exec uvicorn app.main:app`：
+- `&&`：遷移成功才啟動 API
+- `exec`：讓 uvicorn 直接收到停止訊號。沒加之前關容器要等 10.4 秒，加了變 0.8 秒
 
-環境同上，另外為了讓 `done = true` 有資料，我在演習庫手動改了兩組：`user_id = 5` 的前 100 筆改成 true（1%，集中在 id 最前面）；`user_id = 6` 的第偶數筆改成 true（50%，與 false 交錯）。每列都量 3 次，頁數三次一致或只差 1 頁，毫秒只當參考。
+**驗證**：`docker compose down -v` 清空後重新 `up --build`，確認遷移都有跑、欄位是 `not null`。
 
-| 查詢（`LIMIT 20`） | 統計 | 路線 | 讀取資料頁 |
-|---|---|---|---|
-| `user_id = 5 AND done = true ORDER BY id` | 過時 | `user_id` 索引撈 1 萬筆，回表後過濾 | 948 |
-| `user_id = 6 AND done = true ORDER BY id` | 過時 | 同上，回表後過濾 | 998 |
-| `user_id = 5 AND done = true ORDER BY id` | 已更新 | Index Scan using `tasks_pkey`（看 196 筆湊滿） | 41 |
-| `user_id = 6 AND done = true ORDER BY id` | 已更新 | Index Scan using `tasks_pkey`（看 397 筆湊滿） | 85 到 86 |
-| `user_id = 5 ORDER BY id`（不帶 done） | 已更新 | Index Scan using `tasks_pkey` | 41 |
-| `user_id = 6 ORDER BY id`（不帶 done） | 已更新 | Index Scan using `tasks_pkey` | 42 |
-| `user_id = 6 AND done = true ORDER BY title, id` | 已更新 | `user_id` 索引撈 1 萬筆、回表、再排序 | 1001 |
+目前只有一個 API 容器。如果開多個，可能同時跑遷移打架，這個還沒處理。
 
-**這組數字能說明的**：
-- 我大量 `UPDATE` 後沒有先 `ANALYZE`（更新統計），規劃器估計只有 1 筆符合、實際是 100 或 5000 筆，選了讀 948、998 頁的路線。更新統計後，同樣的查詢降到 41 與 85 頁。前兩列保留下來，是因為它們是真的發生過的事，但不能當作索引設計的結論。
-- 統計正確時，`done` 篩選沿 `tasks_pkey` 就夠了：50% 交錯那組，頁數從 42 變成 85 到 86，約兩倍；沒有證據支持新增 `done` 索引。
-- 依 `title` 排序要 1001 頁，比依 `id` 排序慢十幾倍，因為 `title` 沒有索引，要先撈出全部符合的列再排序。要不要加索引，我還沒量寫入成本，所以先不加。
+### 5. CI 和 Docker — 各在乾淨環境測一次
 
-**這組數字不能說明的**：
-- `user_id = 5` 的 true 集中在最前面，所以加不加 `done` 都是 41 頁，這是我造資料的巧合，不代表篩選免費。
-- 沒量到 true 很稀有、又集中在 id 最後面的最壞情況。
-- 資料是自己造的，真實分布沒量到；寫入成本也沒量。
+我電腦上有舊資料、裝好的套件，結果可能剛好是對的。而且 CI 不看 Dockerfile，Docker 也不跑測試。
 
-## 目前的限制（我知道，還沒處理）
+- **CI**：每個 PR 在全新機器上跑 `alembic upgrade head`、`alembic check`、`pytest`
+- **Docker**：改到套件、設定或 Docker 檔案時，本機實際啟動一次
 
-- 測試和 `docker-compose.yml` 裡寫死了測試用的資料庫密碼，之後要改成從環境變數讀。
-- `auth.py` 裡的 `datetime.utcnow()` 已被標示為棄用，測試會出現警告。
-- 本機 Python 是 3.14，CI 和 Docker 用 3.11，兩邊版本不一致。
-- 目前只有 CI（自動檢查），沒有 CD（自動部署）。
+### 6. 統一錯誤格式 — code 給程式，message 給人
 
-## 之後想做的
+**問題**：FastAPI 預設的錯誤格式不一致，有的 `detail` 是字串、422 是清單，沒登入時還是英文 `Not authenticated`。前端很難處理。
 
-我用「先解決會影響別的事情的問題」排順序：
+**做法**：
+- 全部改成 `{"error": {"code", "message"}}`，處理邏輯集中在 `app/errors.py`
+- 「沒帶 token」和「token 無效」分開，前端才知道要叫人登入還是重新登入
 
-1. **篩選、排序（已完成）**：`done` 欄位收緊成 NOT NULL（遷移）、`GET /tasks` 支援 `done` 篩選與 `sort_by` 白名單排序（排序最後補 `id` 決勝負），每個功能都先寫失敗測試再修。實測數字見上面「篩選與排序的實測」：統計正確時 `done` 篩選沿主鍵索引就夠，依 `title` 排序要 1001 頁，先不加索引。還沒做：`order` 升降序、寫入成本
-2. **統一錯誤格式**：讓所有錯誤回應長得一樣
-3. **集中管理設定**：把密碼和設定統一從環境變數讀，解決上面寫死密碼的問題
-4. **重構成 `app/` 分層**：等功能穩定之後再搬，邊做邊搬容易搬壞
-5. **進階項目（從中選 2 到 3 項）**：樂觀鎖、交易、可觀測性、部署上線，我還沒決定
+**驗證**：每種錯誤都有測試比對完整回應，共 8 個。
 
-## 快速啟動（Docker）
+### 7. 集中設定 — 缺設定就不啟動
 
-```bash
-# 複製專案
-git clone https://github.com/kaibu-yang/task-manager-api.git
-cd task-manager-api
+**問題**：原本用 `os.getenv` 讀設定，找不到只會回 `None`，不會報錯。`.env` 忘了寫 `SECRET_KEY`，伺服器照樣啟動，等到有人登入才壞。
 
-# 建立 .env 檔案
-cp .env.example .env
-# 編輯 .env，填入你的 SECRET_KEY
+**做法**：
+- 用 pydantic-settings 在 `app/config.py` 定義設定，啟動時檢查一次
+- `SECRET_KEY` 故意不給預設值。給了假的預設值，忘記設定時就會用假密鑰上線
 
-# 一鍵啟動
-docker compose up --build
-```
+**驗證**：拿掉 `.env` 啟動，會直接報錯，並且一次列出缺的兩個設定。
 
-啟動後打開：http://localhost:8000/docs
+### 8. 分層 — router 管 HTTP，service 管規則
+
+**問題**：router 什麼都做。「找不到就 404」寫了 3 次，「用帳號查使用者」也寫了 3 次。
+
+**做法**：
+- router 只管 HTTP，規則和資料庫操作都放 service
+- 程式碼搬進 `app/`，import 都用 `app.` 開頭，避免和別的套件撞名
+
+**幾個取捨**：
+- **沒加 repository 層**：SQLAlchemy 已經把資料庫細節包好了，也沒有換資料庫的打算，多一層只是多轉一手。之後真的需要再拆
+- **找不到要不要報錯，看情況**：`get_own_task` 找不到一定是 404，直接報錯；`get_user_by_username` 找不到時回 `None`，因為註冊時「找不到」反而是好事
+- service 直接丟 `AppError(404, ...)`，嚴格說它知道了一點 HTTP。現在這個規模，這樣最簡單
+
+**驗證**：每搬一個端點就跑一次測試、各自 commit。搬完確認 router 不再直接碰資料庫。搬進 `app/` 後再跑 `alembic check` 和 Docker。
+
+### 9. JWT 錯誤處理 — 只抓 JWTError
+
+**問題**：解 token 時用 `except Exception`，什麼錯都變成 401「token 無效」。如果是系統自己壞了，使用者看到的卻是 token 無效，我也很難發現。
+
+**做法**：改成只抓 `JWTError`，其他錯誤照常變成 500。
+
+| 情況 | 改之前 | 改之後 |
+|---|---|---|
+| 亂寫的 token | 401 | 401 |
+| 過期的 token | 401 | 401 |
+| 系統出錯 | 401（被蓋掉） | 500 |
+
+**驗證**：怕範圍縮太小、把「過期」也漏掉，所以改之前先補了「過期 token 要回 401」的測試，改完還是通過。
+
+## 資料模型
+
+| 表 | 欄位 |
+|---|---|
+| users | `id`、`username`（不可重複）、`hashed_password`（bcrypt，不存明文） |
+| tasks | `id`、`title`、`description`（可空）、`done`（預設 false，不可空）、`user_id`（外鍵 → `users.id`，有索引，不可空） |
+
+結構由 Alembic 管理，目前 6 個遷移。
 
 ## API 端點
 
+互動式文件：http://localhost:8000/docs
+
 ### 使用者
+
 | 方法 | 網址 | 說明 |
-|------|------|------|
-| POST | /register | 註冊新使用者 |
-| POST | /login | 登入，取得 JWT |
+|---|---|---|
+| POST | /register | 註冊，回傳 token；帳號重複回 400 |
+| POST | /login | 登入（表單格式），回傳 token |
 
-### 任務（需要登入，只能操作自己的任務）
+### 任務（都要登入）
+
 | 方法 | 網址 | 說明 |
-|------|------|------|
-| GET | /tasks | 查詢自己的全部任務 |
-| POST | /tasks | 建立任務（擁有者來自 JWT） |
-| GET | /tasks/{id} | 查詢自己的單筆任務（不是自己的回 404） |
-| PUT | /tasks/{id} | 更新自己的任務 |
-| DELETE | /tasks/{id} | 刪除自己的任務 |
+|---|---|---|
+| GET | /tasks | 列出自己的任務，可用 `limit`、`offset`、`done`、`sort_by`（`id` / `title` / `done`） |
+| POST | /tasks | 新增任務 |
+| GET | /tasks/{id} | 查一筆（不是自己的回 404） |
+| PUT | /tasks/{id} | 修改 |
+| DELETE | /tasks/{id} | 刪除 |
 
-## 執行測試
+### 錯誤格式
 
-```bash
-pytest test_tasks.py -v
+所有錯誤長一樣：
+
+```json
+{"error": {"code": "TASK_NOT_FOUND", "message": "找不到這筆任務"}}
 ```
 
-測試會連到本機一個名為 `testdb` 的 PostgreSQL，連線設定目前寫在 `test_tasks.py`。這是已知的限制，之後會改成從環境變數讀取。
+422 會多一個 `details`，告訴你哪個欄位有問題：
+
+```json
+{"error": {"code": "VALIDATION_ERROR", "message": "請求資料格式錯誤",
+           "details": [{"field": "limit", "message": "超過允許的最大值"}]}}
+```
+
+| 狀態碼 | code | 情況 |
+|---|---|---|
+| 400 | `USERNAME_TAKEN` | 帳號已經有人用 |
+| 401 | `NOT_AUTHENTICATED` | 沒帶 token |
+| 401 | `INVALID_TOKEN` | token 無效、過期，或帳號已不存在 |
+| 401 | `INVALID_CREDENTIALS` | 帳號或密碼錯（不說是哪個） |
+| 404 | `TASK_NOT_FOUND` | 任務不存在，或不是你的 |
+| 404 | `NOT_FOUND` | 網址打錯 |
+| 405 | `METHOD_NOT_ALLOWED` | 方法用錯 |
+| 422 | `VALIDATION_ERROR` | 參數格式不對 |
+
+## 目錄結構
+
+```
+app/
+├── main.py              # 把所有東西組起來：建 app、登記錯誤處理、掛 router
+├── config.py            # 設定，啟動時檢查
+├── database.py          # 資料庫連線與 session
+├── models.py            # 資料表
+├── schemas.py           # 請求和回應的格式
+├── errors.py            # 統一錯誤格式
+├── routers/             # HTTP 層
+│   ├── auth.py          #   註冊、登入、get_current_user
+│   └── tasks.py         #   任務 CRUD
+└── services/            # 業務規則和資料庫操作
+    ├── auth_service.py  #   查使用者、密碼雜湊、簽發與解開 token
+    └── task_service.py  #   只能碰自己的任務、篩選排序分頁
+
+alembic/                 # 資料庫遷移
+test_tasks.py            # 測試
+.github/workflows/       # CI
+```
+
+## 本地開發
+
+### 1. 建立 .env
+
+```bash
+cp .env.example .env
+```
+
+打開 `.env` 填入 `SECRET_KEY`，產生方式：
+
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+### 2. 啟動
+
+```bash
+docker compose up --build
+```
+
+會起兩個容器：`api`（:8000）和 `db`（PostgreSQL）。`api` 啟動時會先跑遷移，成功才開始接請求。
+
+### 3. 跑一遍流程
+
+需要 `jq`（用來從回應裡取出 token）。
+
+```bash
+# 註冊
+curl -X POST localhost:8000/register -H 'Content-Type: application/json' \
+  -d '{"username":"alice","password":"secret123"}'
+
+# 登入，拿 token
+TOKEN=$(curl -s -X POST localhost:8000/login \
+  -d 'username=alice&password=secret123' | jq -r .access_token)
+
+# 新增任務
+curl -X POST localhost:8000/tasks -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"title":"買牛奶"}'
+
+# 列出任務（只看未完成、依標題排序）
+curl "localhost:8000/tasks?done=false&sort_by=title" -H "Authorization: Bearer $TOKEN"
+
+# 不帶 token → 401 NOT_AUTHENTICATED
+curl -i localhost:8000/tasks
+```
+
+## 測試與 CI
+
+```bash
+pytest -v
+```
+
+25 個測試，包含 CRUD、分頁篩選排序、存取別人的任務要回 404、每種錯誤的回應格式、過期 token。
+
+測試連的是本機的 `testdb`，連線字串目前寫死在 `test_tasks.py`。
+
+GitHub Actions（`.github/workflows/test.yml`）在開 PR 和推到 main 時跑：
+
+1. 起一個全新的 PostgreSQL 15
+2. `alembic upgrade head`：從空資料庫建出所有表
+3. `alembic check`：確認模型和資料庫沒有差異
+4. `pytest -v`
+
+## 實測：索引效能
+
+環境：本機 WSL2、PostgreSQL 18，`tasks` 約 10 萬筆（10 個使用者各 1 萬筆，另一個只有 3 筆）。用 `EXPLAIN ANALYZE` 量。
+
+| `user_id = 1`（只有 3 筆）`ORDER BY id LIMIT 20` | 走法 | 讀取頁數 | 時間（3 次中位數） |
+|---|---|---|---|
+| 加 `user_id` 索引前 | 整張表掃一遍 | 934 | 58.96 ms |
+| 加 `user_id` 索引後 | 走索引 | 3 | 0.17 ms |
+
+| `user_id = 5`（1 萬筆）`ORDER BY id LIMIT 20` | 走法 | 讀取頁數 | 時間 |
+|---|---|---|---|
+| 加索引前 | 沿著 id 索引走，湊滿 20 筆就停 | 4 | 0.22 ms（3 次中位數） |
+| 加索引後 | 一樣，沒用新索引 | 4 | 0.14 ms（量 1 次） |
+| 拿掉重複的 id 索引後 | 改走主鍵 | 4 | 0.08 ms（量 1 次） |
+
+資料少的使用者差很多，因為不用掃整張表；資料多的沒差，因為沿 id 走很快就湊滿 20 筆。
+
+時間的變動很大（同一個查詢量到 7.6、64.1、59.0 ms），所以我主要看讀取頁數。
+
+### 篩選和排序
+
+另外把 `user_id = 5` 的前 100 筆改成 `done = true`（1%，集中在前面），`user_id = 6` 隔一筆改一筆（50%）。每個都量 3 次。
+
+| 查詢（`LIMIT 20`） | 統計資料 | 讀取頁數 |
+|---|---|---|
+| `user_id = 5 AND done = true ORDER BY id` | 過時 | 948 |
+| `user_id = 6 AND done = true ORDER BY id` | 過時 | 998 |
+| `user_id = 5 AND done = true ORDER BY id` | 已更新 | 41 |
+| `user_id = 6 AND done = true ORDER BY id` | 已更新 | 85～86 |
+| `user_id = 6 ORDER BY id`（不篩選） | 已更新 | 42 |
+| `user_id = 6 AND done = true ORDER BY title, id` | 已更新 | 1001 |
+
+- 大量 `UPDATE` 之後忘了跑 `ANALYZE`，資料庫以為只有 1 筆符合，選錯了路。更新統計後就正常了。前兩列是我踩到的坑，不能拿來當結論。
+- 統計正確時，篩 `done` 讀的頁數大約兩倍，還不用另外加 `done` 索引。
+- 用 `title` 排序要讀 1001 頁，因為 `title` 沒索引。我還沒量加索引對寫入的影響，所以先不加。
+
+這些數字的限制：資料是我自己灌的，分布很整齊，跟真實情況不一樣；而且只量了讀取，沒量寫入。
+
+## 目前的限制
+
+- 測試和 `docker-compose.yml` 裡還寫死了開發用的資料庫密碼
+- 未預期的錯誤（500）還沒用統一格式
+- 登入時，帳號不存在會比密碼錯誤回得快，可能被拿來猜帳號是否存在
+- 本機 Python 3.14，CI 和 Docker 是 3.11
+- 還沒部署上線
+
+## 接下來
+
+1. 部署上線
+2. 測試的資料庫設定改用環境變數
+3. 處理兩個人同時改同一筆任務（交易、樂觀鎖），加上結構化日誌
