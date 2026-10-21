@@ -1,10 +1,10 @@
 from sqlalchemy import select  # 查詢資料庫的工具
 from sqlalchemy.ext.asyncio import AsyncSession  # 跟資料庫對話的工具（這裡只用來標示型別）
 
-import models  # 資料表定義（Task、User）
-from errors import AppError  # 自訂錯誤類別
+from app import models  # 資料表定義（Task、User）
+from app.errors import AppError  # 自訂錯誤類別
 
-from schemas import SortField, TaskCreate  # 排序欄位選項、建立任務的資料格式
+from app.schemas import SortField, TaskCreate  # 排序欄位選項、建立任務的資料格式
 
 
 async def get_own_task(db: AsyncSession, task_id: int, user: models.User) -> models.Task:  # 取出屬於這位使用者的任務

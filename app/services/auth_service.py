@@ -1,17 +1,17 @@
 from sqlalchemy import select  # 查詢資料庫的工具
 from sqlalchemy.ext.asyncio import AsyncSession  # 跟資料庫對話的工具（這裡只用來標示型別）
 
-import models  # 資料表定義（User）
+from app import models  # 資料表定義（User）
 
 from passlib.context import CryptContext  # 密碼加密工具
 
-from errors import AppError  # 自訂錯誤類別
-from schemas import UserCreate  # 註冊用的資料格式
+from app.errors import AppError  # 自訂錯誤類別
+from app.schemas import UserCreate  # 註冊用的資料格式
 
 from datetime import datetime, timedelta, timezone  # 時間工具：現在時間、時間差、時區
 from jose import JWTError, jwt  # jwt = 產生／解開手環的工具；JWTError = 手環有問題時的專用錯誤
 
-from config import settings  # 設定櫃台（密鑰、演算法）
+from app.config import settings  # 設定櫃台（密鑰、演算法）
 
 
 
