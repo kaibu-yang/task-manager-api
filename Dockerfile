@@ -17,7 +17,7 @@ RUN pip install -r requirements.txt
 COPY . .
 # COPY . . = 把整個專案複製進容器
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 # CMD（指令）= 容器啟動時執行的指令
 # --host 0.0.0.0 = 讓外部可以連進來（不只是本機）
 # --port 8000 = 用 8000 號埠
