@@ -9,18 +9,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 # AsyncSession（非同步會話）= 跟資料庫對話的工具（非同步版）
 
 
-from database import get_db
+from app.database import get_db
 # 從 database.py 匯入 get_db（取得資料庫連線的函式）
-from routers.auth import get_current_user
+from app.routers.auth import get_current_user
 # 從 auth.py 匯入「驗票員」函式
 
-import models
-# 匯入 models.py（資料表定義）
+from app import models # 匯入 models.py（資料表定義）
  
-from schemas import TaskCreate, TaskRead, SortField
+from app.schemas import TaskCreate, TaskRead, SortField
 # 從 schemas.py 匯入我們剛建立的兩個資料格式
 
-from services import task_service
+from app.services import task_service
 # 匯入廚房（業務規則都放在這裡）
 
 

@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey
 from sqlalchemy.sql import expression
-from database import Base
+from app.database import Base
 
 # Task 的 ORM 模型：對應資料庫裡一張叫 "tasks" 的表格
 class Task(Base):

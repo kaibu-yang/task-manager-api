@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base
-from config import settings  # 從 config.py 拿出已經清點好的櫃台
+from app.config import settings  # 從 config.py 拿出已經清點好的櫃台
 
 DATABASE_URL = settings.database_url  # 找櫃台拿資料庫連線字串（保證有值，缺了早就啟動失敗）
 

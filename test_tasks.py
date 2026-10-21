@@ -9,18 +9,18 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 # create_async_engine（建立非同步引擎）= 非同步版的資料庫連線管理員
 # async_sessionmaker（非同步 session 製造機）= 非同步版的對話工具
 
-from database import get_db
+from app.database import get_db
 # 從 database.py 匯入 get_db（取得資料庫連線的函式）
 
-from main import app
+from app.main import app
 # 從 main.py 匯入 app（FastAPI 應用程式）
 
-import models
+from app import models
 # 匯入 models.py（資料表定義）
 
 from datetime import datetime, timedelta, timezone  # 時間工具：用來做一個已經過期的手環
 from jose import jwt  # 產生 JWT 手環的工具
-from config import settings  # 設定櫃台：要用同一把密鑰簽名，手環才會「簽名正確但已過期」
+from app.config import settings  # 設定櫃台：要用同一把密鑰簽名，手環才會「簽名正確但已過期」
 
 
 # 測試用的資料庫連線網址（用 testdb，不用真實的 taskdb）

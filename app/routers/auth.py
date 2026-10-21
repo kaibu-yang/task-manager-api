@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 
-from errors import AppError  # 匯入自訂錯誤類別，取代 HTTPException
+from app.errors import AppError  # 匯入自訂錯誤類別，取代 HTTPException
 
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 # OAuth2PasswordRequestForm（OAuth2 密碼請求表單）= 接收表單格式的帳號密碼
@@ -8,14 +8,14 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 # AsyncSession（非同步會話）= 跟資料庫對話的工具
 
-from database import get_db
+from app.database import get_db
 # 從 database.py 匯入 get_db（取得資料庫連線的函式）
 
 
-from schemas import UserCreate, Token
+from app.schemas import UserCreate, Token
 # 從 schemas.py 匯入使用者相關的資料格式
 
-from services import auth_service
+from app.services import auth_service
 # 匯入 auth 的廚房（使用者相關的業務規則）
 
 

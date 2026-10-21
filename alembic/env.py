@@ -18,9 +18,9 @@ if config.config_file_name is not None:
 
 
 # import（匯入）= 把別的檔案裡的東西拿進來用；Base 就是藍圖資料夾
-from database import Base, DATABASE_URL
+from app.database import Base, DATABASE_URL
 # 把 models.py 整個執行一遍，Task、User 才會登記進藍圖資料夾；noqa: F401 是告訴程式碼檢查工具「這行沒用到變數是故意的」
-import models  # noqa: F401
+from app import models # noqa: F401
 # target_metadata（目標藍圖）= 告訴 Alembic 以這份清單為準去比對
 target_metadata = Base.metadata
 # set_main_option（設定主要選項）= 把網址填進 Alembic 的設定；% 要寫成 %%，這是設定檔格式的規定
