@@ -1,3 +1,5 @@
+import asyncio  # 非同步工具：用來把很慢的計算丟到別的執行緒
+
 from sqlalchemy import select  # 查詢資料庫的工具
 from sqlalchemy.ext.asyncio import AsyncSession  # 跟資料庫對話的工具（這裡只用來標示型別）
 
@@ -32,7 +34,8 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:  # 檢�
 async def register_user(db: AsyncSession, data: UserCreate) -> models.User:  # 註冊新使用者
     if await get_user_by_username(db, data.username) is not None:  # 規則一：帳號不能重複
         raise AppError(400, "USERNAME_TAKEN", "帳號已經存在")  # 被用過就拒絕
-    user = models.User(username=data.username, hashed_password=hash_password(data.password))  # 規則二：只存加密後的密碼
+    hashed = await asyncio.to_thread(hash_password, data.password)  # 加密很慢，丟到別的執行緒算，不卡住其他請求
+    user = models.User(username=data.username, hashed_password=hashed)  # 規則二：只存加密後的密碼
     db.add(user)  # 放進待存清單
     await db.commit()  # 寫進資料庫
     await db.refresh(user)  # 重新讀回來，拿到資料庫產生的 id
@@ -41,7 +44,7 @@ async def register_user(db: AsyncSession, data: UserCreate) -> models.User:  # �
 
 async def authenticate_user(db: AsyncSession, username: str, password: str) -> models.User:  # 檢查帳號密碼，正確就回傳使用者
     user = await get_user_by_username(db, username)  # 先用帳號找人
-    if user is None or not verify_password(password, user.hashed_password):  # 帳號不存在，或密碼不對
+    if user is None or not await asyncio.to_thread(verify_password, password, user.hashed_password):  # 帳號不存在，或密碼不對；比對丟到別的執行緒
         raise AppError(401, "INVALID_CREDENTIALS", "帳號或密碼錯誤")  # 規則：不說是哪一個錯，避免洩漏帳號是否存在
     return user  # 帳密都正確，回傳使用者
 
